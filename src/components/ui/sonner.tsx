@@ -16,8 +16,14 @@ const toasterTokens: React.CSSProperties & Record<`--${string}`, string> = {
 };
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "light" } = useTheme();
-  const resolvedTheme = isValidTheme(theme) ? theme : "light";
+  // `forcedTheme` first: next-themes keeps it as its own context field and
+  // never folds it into `theme`, which stays whatever is in storage or the
+  // default. Reading `theme` alone therefore hands back `"light"` for anyone
+  // whose browser still holds a value written before the app was pinned to
+  // dark, and the toasts come up light against a dark page.
+  const { theme = "light", forcedTheme } = useTheme();
+  const requested = forcedTheme ?? theme;
+  const resolvedTheme = isValidTheme(requested) ? requested : "light";
 
   return (
     <Sonner

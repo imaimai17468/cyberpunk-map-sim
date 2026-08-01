@@ -10,12 +10,12 @@ sonnet, effort standard.
 
 ## Before → after
 
-| fixture | metric | pre-#1 (`results/2026-07-12-flat-pipeline.md`) | post-#1 (this run) |
-|---|---|---|---|
-| fx-06 (clean-diff FP probe: constant extraction) | false positives | 1 (CONFIRMED minor) | **0 (REFUTED)** |
-| fx-07 (multi-file: benign rename + real state bug) | expected bug | found (CONFIRMED) | found (CONFIRMED) |
-| fx-07 | false positives (the rename) | 1 (CONFIRMED minor) | **0 (REFUTED)** |
-| fx-01 (logic/boundary detection) | expected finding | found (CONFIRMED) | found (CONFIRMED) |
+| fixture                                            | metric                       | pre-#1 (`results/2026-07-12-flat-pipeline.md`) | post-#1 (this run) |
+| -------------------------------------------------- | ---------------------------- | ---------------------------------------------- | ------------------ |
+| fx-06 (clean-diff FP probe: constant extraction)   | false positives              | 1 (CONFIRMED minor)                            | **0 (REFUTED)**    |
+| fx-07 (multi-file: benign rename + real state bug) | expected bug                 | found (CONFIRMED)                              | found (CONFIRMED)  |
+| fx-07                                              | false positives (the rename) | 1 (CONFIRMED minor)                            | **0 (REFUTED)**    |
+| fx-01 (logic/boundary detection)                   | expected finding             | found (CONFIRMED)                              | found (CONFIRMED)  |
 
 ## What changed and where the effect landed
 
@@ -47,6 +47,7 @@ the stage that drops the true-but-trivial ones. That is a healthy division:
 the finder stays high-recall, the verifier tightens precision.
 
 Caveats:
+
 - Only 3 of 7 fixtures run (the two FP probes + one detection spot). fx-02..05
   detection was not re-measured this round; the correctness-lens guidance is
   unchanged, so non-regression is expected but not re-proven here.

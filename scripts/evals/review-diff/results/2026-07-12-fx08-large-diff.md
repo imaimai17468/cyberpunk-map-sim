@@ -8,13 +8,13 @@ standard. Runner: parent session (Fable).
 
 ## Full run
 
-| metric | result |
-|---|---|
-| gateways swallowed-error defect | **found**, CONFIRMED critical (call chain traced to the always-success toast) |
-| ProfileForm inverted size check | **found**, CONFIRMED critical |
-| false positives on the 6 benign files | **0** (finder cleared all six; verifier spot-check agreed) |
-| tokens (finder + verifier) | 41.9k + 39.9k = **81.8k** |
-| wall time | 47s + 25s |
+| metric                                | result                                                                        |
+| ------------------------------------- | ----------------------------------------------------------------------------- |
+| gateways swallowed-error defect       | **found**, CONFIRMED critical (call chain traced to the always-success toast) |
+| ProfileForm inverted size check       | **found**, CONFIRMED critical                                                 |
+| false positives on the 6 benign files | **0** (finder cleared all six; verifier spot-check agreed)                    |
+| tokens (finder + verifier)            | 41.9k + 39.9k = **81.8k**                                                     |
+| wall time                             | 47s + 25s                                                                     |
 
 The finder even cross-checked the cloudflare.ts comment edit against
 ADR-0005 before clearing it — benign-majority noise did not degrade
@@ -23,7 +23,7 @@ precision.
 ## Delta scenario — two runs, one protocol lesson
 
 After the full run, `delta.patch` fixed the gateways defect (restoring the
-file to HEAD, so it *dropped out of the diff*).
+file to HEAD, so it _dropped out of the diff_).
 
 **Attempt 1 — fail-closed fallback (protocol lesson).** The dispatch
 described the delta as "one edit to src/gateways/user/index.ts restoring the
@@ -48,10 +48,10 @@ since the prior review; ProfileForm finding intentionally unaddressed,
 parent-tracked." Result: `mode: "delta"`, no fallback, fix confirmed, zero
 candidates; verifier spot-checked the fix independently and returned clean.
 
-| metric | full run | delta run (attempt 2) | saving |
-|---|---|---|---|
-| tokens | 81.8k | 29.5k + 28.4k = **57.9k** | **−29%** |
-| wall time | 72s | 14s + 12s = **26s** | **−64%** |
+| metric    | full run | delta run (attempt 2)     | saving   |
+| --------- | -------- | ------------------------- | -------- |
+| tokens    | 81.8k    | 29.5k + 28.4k = **57.9k** | **−29%** |
+| wall time | 72s      | 14s + 12s = **26s**       | **−64%** |
 
 ## Read
 
@@ -62,7 +62,7 @@ candidates; verifier spot-checked the fix independently and returned clean.
   64%, but tokens only 29%: each dispatch carries ~25-28k of fixed cost
   (preloaded skill + agent scaffolding), so the token floor for any
   two-agent cycle is ~50k regardless of scope. Delta mode saves the
-  *variable* cost (re-reading 7 unchanged files), which at this size is
+  _variable_ cost (re-reading 7 unchanged files), which at this size is
   ~24k. Savings should grow with diff size, but the fixed floor means delta
   mode can never go below ~50k/cycle under the current two-dispatch shape.
 - **The fail-closed rule fired correctly on its first real ambiguity** —

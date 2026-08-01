@@ -5,14 +5,14 @@ d343489 (= the harness commit's parent for src files; all patches applied and
 reverted cleanly). fx-05 ran as a FULL review (no prior report) — it is the
 comparison point for Phase 2 delta mode.
 
-| fixture | found | missed | FP | tokens | wall time |
-|---|---|---|---|---|---|
-| fx-01 (logic/boundary) | 1/1 | 0 | 0 | 34,755 | 57s |
-| fx-02 (type escape) | 1/1 | 0 | 0 | 41,842 | 144s |
-| fx-03 (render purity) | 1/1 | 0 | 0 | 40,478 | 59s |
-| fx-04 (swallowed error) | 1/1 | 0 | 0 | 38,149 | 74s |
-| fx-05 (delta seed, run FULL) | 1/1 | 0 | 0 | 43,035 | 96s |
-| **total** | **5/5** | **0** | **0** | **198,259** | **430s** |
+| fixture                      | found   | missed | FP    | tokens      | wall time |
+| ---------------------------- | ------- | ------ | ----- | ----------- | --------- |
+| fx-01 (logic/boundary)       | 1/1     | 0      | 0     | 34,755      | 57s       |
+| fx-02 (type escape)          | 1/1     | 0      | 0     | 41,842      | 144s      |
+| fx-03 (render purity)        | 1/1     | 0      | 0     | 40,478      | 59s       |
+| fx-04 (swallowed error)      | 1/1     | 0      | 0     | 38,149      | 74s       |
+| fx-05 (delta seed, run FULL) | 1/1     | 0      | 0     | 43,035      | 96s       |
+| **total**                    | **5/5** | **0**  | **0** | **198,259** | **430s**  |
 
 ## Notes
 

@@ -8,9 +8,9 @@ CONFIRMED survivors). Runner: parent session (Fable); both agents opus.
 
 ## fx / sx result
 
-| fixture | expected | result | tokens (hunter+checker) | wall time |
-|---|---|---|---|---|
-| sx-01 (two-step wizard, double-submit loophole) | double-submit counterexample found, CONFIRMED | **found** — F1 (forbidden) + I1 (invariant) CONFIRMED on the 4-step trace `edit --next--> review --confirm--> done --back--> review --confirm--> done`; **0 false positives** | 47.5k | 98s |
+| fixture                                         | expected                                      | result                                                                                                                                                                        | tokens (hunter+checker) | wall time |
+| ----------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | --------- |
+| sx-01 (two-step wizard, double-submit loophole) | double-submit counterexample found, CONFIRMED | **found** — F1 (forbidden) + I1 (invariant) CONFIRMED on the 4-step trace `edit --next--> review --confirm--> done --back--> review --confirm--> done`; **0 false positives** | 47.5k                   | 98s       |
 
 ## Detail
 
@@ -22,7 +22,7 @@ CONFIRMED survivors). Runner: parent session (Fable); both agents opus.
 - **Checker** (fresh, hunt-blind) replayed all three: CONFIRMED F1 and I1
   (same trace, two properties — kept separate per the machine's two declared
   properties), and **REFUTED the liveness candidate** — correctly reasoning
-  that the trace's return to `edit` is a *voluntary* navigation, not an
+  that the trace's return to `edit` is a _voluntary_ navigation, not an
   unfinishable flow, and that the spec declares no termination requirement to
   violate. That refutation is the hunt≠verify independence working: the
   checker killed a plausible-but-not-demonstrated candidate the hunter raised.

@@ -10,13 +10,13 @@ claim of ADR-0015 is the headline result).
 
 ## Detection (fx-01…fx-05, comparable to the nested baseline)
 
-| fixture | found | FP | tokens (finder+verifier) | wall time |
-|---|---|---|---|---|
-| fx-01 (logic/boundary) | 1/1 CONFIRMED | 0 | 59.0k | 69s |
-| fx-02 (type escape) | 1/1 CONFIRMED | 0 | 79.5k | 546s* |
-| fx-03 (render purity) | 1/1 CONFIRMED | 0 | 69.3k | 78s |
-| fx-04 (swallowed error) | 1/1 CONFIRMED | 0 | 74.2k | 73s |
-| fx-05 (max vs message) | 1/1 CONFIRMED | 0 | 59.5k | 91s |
+| fixture                 | found         | FP  | tokens (finder+verifier) | wall time |
+| ----------------------- | ------------- | --- | ------------------------ | --------- |
+| fx-01 (logic/boundary)  | 1/1 CONFIRMED | 0   | 59.0k                    | 69s       |
+| fx-02 (type escape)     | 1/1 CONFIRMED | 0   | 79.5k                    | 546s*     |
+| fx-03 (render purity)   | 1/1 CONFIRMED | 0   | 69.3k                    | 78s       |
+| fx-04 (swallowed error) | 1/1 CONFIRMED | 0   | 74.2k                    | 73s       |
+| fx-05 (max vs message)  | 1/1 CONFIRMED | 0   | 59.5k                    | 91s       |
 
 \* fx-02's verifier reproduced the no-cast typecheck by editing/restoring the
 file and running tsc twice — thorough but slow; an outlier.
@@ -28,12 +28,12 @@ dedup discipline (fx-04's two same-line candidates merged by the verifier).
 
 ## New probes (first measurements)
 
-| fixture | expected | result | tokens | wall time |
-|---|---|---|---|---|
-| fx-06 (clean diff, FP probe) | 0 findings | **FP = 1** (CONFIRMED minor: "constant doesn't replace the duplicated '5MB' display strings") | 70.3k | 49s |
-| fx-07 (multi-file mixed) | 1 finding; rename NOT flagged | found 1/1 CONFIRMED (pendingFile bug) but **FP = 1** on the rename (CONFIRMED minor, commit-split framing) | 76.9k | 113s |
+| fixture                      | expected                      | result                                                                                                     | tokens | wall time |
+| ---------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------- | ------ | --------- |
+| fx-06 (clean diff, FP probe) | 0 findings                    | **FP = 1** (CONFIRMED minor: "constant doesn't replace the duplicated '5MB' display strings")              | 70.3k  | 49s       |
+| fx-07 (multi-file mixed)     | 1 finding; rename NOT flagged | found 1/1 CONFIRMED (pendingFile bug) but **FP = 1** on the rename (CONFIRMED minor, commit-split framing) | 76.9k  | 113s      |
 
-Honest read of the 2 FPs: both are *factually true observations* (the
+Honest read of the 2 FPs: both are _factually true observations_ (the
 display strings really are unlinked; the rename really is an unrelated
 drive-by that AGENTS.md's commit rule says to split). The fixtures' strict
 rubric counts them as over-reporting because a benign refactor should draw
@@ -48,11 +48,11 @@ count) is verifier precision 100%.
 
 ## Cost vs the nested baseline
 
-| metric | nested (2026-07-10 baseline, fx-01..05) | flat (this run, fx-01..05) |
-|---|---|---|
-| tokens | 198.3k (avg 39.7k/fixture) | 341.5k (avg 68.3k/fixture) |
-| wall time | 430s† | 857s (311s excluding the fx-02 outlier) |
-| hangs/stalls | 0 in that run; **3 across the session** | **0 in 14 dispatches** |
+| metric       | nested (2026-07-10 baseline, fx-01..05) | flat (this run, fx-01..05)              |
+| ------------ | --------------------------------------- | --------------------------------------- |
+| tokens       | 198.3k (avg 39.7k/fixture)              | 341.5k (avg 68.3k/fixture)              |
+| wall time    | 430s†                                   | 857s (311s excluding the fx-02 outlier) |
+| hangs/stalls | 0 in that run; **3 across the session** | **0 in 14 dispatches**                  |
 
 † pre-foreground-mandate numbers, known to undercount (see
 `2026-07-10-delta-mode.md`).

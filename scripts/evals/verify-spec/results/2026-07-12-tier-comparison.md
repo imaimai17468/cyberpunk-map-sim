@@ -9,14 +9,14 @@ ran fresh in this session, n=1 per cell.
 
 ## Results
 
-| fixture | tier | expected CE | decoys refuted? | FPs | tokens (hunter+checker) | wall |
-|---|---|---|---|---|---|---|
-| sx-01 | opus | found, CONFIRMED | — (none raised) | 0 | 47.5k | 98s |
-| sx-01 | sonnet | found, CONFIRMED | yes (2/2: livelock framing, R1 re-review) | 0 | 26.2k + 27.1k = 53.3k | 85s + 43s |
-| sx-02 | opus | found, CONFIRMED (both lenses) | yes (hunter never raised the cart cycle) | 0 | 22.5k + 23.3k = 45.8k | 31s + 32s |
-| sx-02 | sonnet | found, CONFIRMED (both lenses) | yes (hunter evaluated and rejected the cart cycle) | 0 | 26.3k + 28.4k = 54.7k | 73s + 34s |
-| sx-03 | opus | found, CONFIRMED | yes (2/2: conflict wait, autosave loop) | 0 | 22.7k + 23.8k = 46.5k | 77s + 56s |
-| sx-03 | sonnet | found, CONFIRMED | **no — 1 of 3** (autosave loop and I1 refuted; **conflict wait CONFIRMED**) | **1** | 26.5k + 28.0k = 54.5k | 154s + 84s |
+| fixture | tier   | expected CE                    | decoys refuted?                                                             | FPs   | tokens (hunter+checker) | wall       |
+| ------- | ------ | ------------------------------ | --------------------------------------------------------------------------- | ----- | ----------------------- | ---------- |
+| sx-01   | opus   | found, CONFIRMED               | — (none raised)                                                             | 0     | 47.5k                   | 98s        |
+| sx-01   | sonnet | found, CONFIRMED               | yes (2/2: livelock framing, R1 re-review)                                   | 0     | 26.2k + 27.1k = 53.3k   | 85s + 43s  |
+| sx-02   | opus   | found, CONFIRMED (both lenses) | yes (hunter never raised the cart cycle)                                    | 0     | 22.5k + 23.3k = 45.8k   | 31s + 32s  |
+| sx-02   | sonnet | found, CONFIRMED (both lenses) | yes (hunter evaluated and rejected the cart cycle)                          | 0     | 26.3k + 28.4k = 54.7k   | 73s + 34s  |
+| sx-03   | opus   | found, CONFIRMED               | yes (2/2: conflict wait, autosave loop)                                     | 0     | 22.7k + 23.8k = 46.5k   | 77s + 56s  |
+| sx-03   | sonnet | found, CONFIRMED               | **no — 1 of 3** (autosave loop and I1 refuted; **conflict wait CONFIRMED**) | **1** | 26.5k + 28.0k = 54.5k   | 154s + 84s |
 
 ## The discriminating case (sx-03, conflict-wait decoy)
 
@@ -31,7 +31,7 @@ reasoning that `conflict` lacks an external escape valve — importing a
 "user may permanently decline" liveness notion the machine doesn't declare.
 Per `sx-03/expected.md` this is the listed decoy: a false positive.
 
-Notably the sonnet checker refuted the *same shape* correctly in sx-01 (the
+Notably the sonnet checker refuted the _same shape_ correctly in sx-01 (the
 review⇄done livelock) — the sx-03 variant is harder because the escape
 guard is a discretionary user choice rather than an unconditional action.
 That asymmetry is exactly the tier boundary the fixture was built to probe.

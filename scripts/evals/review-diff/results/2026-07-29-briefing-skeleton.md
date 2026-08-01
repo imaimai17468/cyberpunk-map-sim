@@ -43,22 +43,22 @@ rounded once. The printed addends are each independently rounded, so adding the 
 printed figures may differ from the printed total in the last digit; the totals are
 the correct ones.
 
-| fixture | found | missed | FP | candidates | refuted | tokens (finder+verifier) | wall |
-|---|---|---|---|---|---|---|---|
-| fx-01 (logic/boundary) | 1/1 CONFIRMED | 0 | 0 | 3 | 1 | 42.4k + 37.0k = **79.4k** | 56s + 93s |
-| fx-06 (clean-diff FP probe) | n/a | n/a | **0** | 1 | 1 | 41.5k + 46.2k = **87.6k** | 68s + 108s |
-| fx-07 (benign rename + state bug) | 1/1 CONFIRMED | 0 | 0 | 1 | 0 | 38.5k + 39.8k = **78.2k** | 50s + 59s |
-| fx-08 (8 files, 2 defects) | 2/2 CONFIRMED | 0 | 0 | 4 | 2 | 47.8k + 49.5k = **97.3k** | 73s + 109s |
+| fixture                           | found         | missed | FP    | candidates | refuted | tokens (finder+verifier)  | wall       |
+| --------------------------------- | ------------- | ------ | ----- | ---------- | ------- | ------------------------- | ---------- |
+| fx-01 (logic/boundary)            | 1/1 CONFIRMED | 0      | 0     | 3          | 1       | 42.4k + 37.0k = **79.4k** | 56s + 93s  |
+| fx-06 (clean-diff FP probe)       | n/a           | n/a    | **0** | 1          | 1       | 41.5k + 46.2k = **87.6k** | 68s + 108s |
+| fx-07 (benign rename + state bug) | 1/1 CONFIRMED | 0      | 0     | 1          | 0       | 38.5k + 39.8k = **78.2k** | 50s + 59s  |
+| fx-08 (8 files, 2 defects)        | 2/2 CONFIRMED | 0      | 0     | 4          | 2       | 47.8k + 49.5k = **97.3k** | 73s + 109s |
 
 ## Versus baseline
 
-| fixture | quality then | quality now | tokens then | tokens now | delta |
-|---|---|---|---|---|---|
-| fx-01 | found, 0 FP | found, 0 FP | 57.3k | 79.4k | **+39%** |
-| fx-06 | 0 FP | 0 FP | 74.0k | 87.6k | **+18%** |
-| fx-07 | found, 0 FP | found, 0 FP | 78.4k | 78.2k | ±0% |
-| fx-08 | 2 found, 0 FP | 2 found, 0 FP | 76.7k | 97.3k | **+27%** |
-| total | 4/4, 0 FP | 4/4, 0 FP | 286.4k | 342.6k | **+20%** |
+| fixture | quality then  | quality now   | tokens then | tokens now | delta    |
+| ------- | ------------- | ------------- | ----------- | ---------- | -------- |
+| fx-01   | found, 0 FP   | found, 0 FP   | 57.3k       | 79.4k      | **+39%** |
+| fx-06   | 0 FP          | 0 FP          | 74.0k       | 87.6k      | **+18%** |
+| fx-07   | found, 0 FP   | found, 0 FP   | 78.4k       | 78.2k      | ±0%      |
+| fx-08   | 2 found, 0 FP | 2 found, 0 FP | 76.7k       | 97.3k      | **+27%** |
+| total   | 4/4, 0 FP     | 4/4, 0 FP     | 286.4k      | 342.6k     | **+20%** |
 
 Detection and false-positive resistance are **unchanged on every fixture**. Cost
 is up 20% overall, and the increase is not spread evenly: it appears only where
@@ -98,16 +98,16 @@ but each consumed a finder/verifier round trip.
 Four findings survived across the run. Each is assessed on the three axes the run
 protocol names.
 
-| finding | `fix` concretely actionable? | `acceptance` checkable? |
-|---|---|---|
-| fx-01 empty-name schema | yes — names the line and the exact replacement, and says where the mid-edit concern belongs instead | yes — a `git diff` observable plus `vitest` 10/10 |
-| fx-07 pending-file cleared early | yes — states the target position relative to the error block, not "handle the error path" | partly — the textual position is checkable; the retry behaviour is a manual simulation |
-| fx-08 inverted size check | yes — the exact comparison to restore | yes — `vitest` 46/46, and it named the 3 currently-failing cases before the fix |
-| fx-08 swallowed DB error | yes — the exact return shape to restore | weaker — a code read, because no test file covers `src/gateways/user/`; the verifier said so rather than inventing a command |
+| finding                          | `fix` concretely actionable?                                                                        | `acceptance` checkable?                                                                                                      |
+| -------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| fx-01 empty-name schema          | yes — names the line and the exact replacement, and says where the mid-edit concern belongs instead | yes — a `git diff` observable plus `vitest` 10/10                                                                            |
+| fx-07 pending-file cleared early | yes — states the target position relative to the error block, not "handle the error path"           | partly — the textual position is checkable; the retry behaviour is a manual simulation                                       |
+| fx-08 inverted size check        | yes — the exact comparison to restore                                                               | yes — `vitest` 46/46, and it named the 3 currently-failing cases before the fix                                              |
+| fx-08 swallowed DB error         | yes — the exact return shape to restore                                                             | weaker — a code read, because no test file covers `src/gateways/user/`; the verifier said so rather than inventing a command |
 
 No surviving finding needed an owner decision, so this run does not exercise the
 "listed credible options instead of an invented answer" axis. The two candidates
-that *would* have needed one (fx-01's react-hook-form critique, fx-08's
+that _would_ have needed one (fx-01's react-hook-form critique, fx-08's
 commit-split observation) were refuted before reaching that stage. That axis stays
 unmeasured, as it was in the baseline.
 

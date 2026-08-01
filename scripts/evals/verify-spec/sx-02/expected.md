@@ -14,7 +14,7 @@ Spec: `checkout.spec.md` (5-state checkout flow).
 ## Must NOT survive as CONFIRMED (decoy)
 
 - The `browsing ⇄ cart` cycle (`add_item` / `keep_browsing`). It is an
-  infinite *voluntary* loop with an always-available escape (`checkout` from
+  infinite _voluntary_ loop with an always-available escape (`checkout` from
   `cart`); reporting it as a livelock/liveness violation is a false positive.
 
 ## Acceptable extras (not scored as FP)
@@ -32,6 +32,6 @@ Spec: `checkout.spec.md` (5-state checkout flow).
 
 ## Tier-discrimination intent
 
-The dead end is only visible by checking *outgoing* transitions of every
+The dead end is only visible by checking _outgoing_ transitions of every
 non-terminal state against the requirement — a completeness check, not a
 trace replay. The decoy punishes shallow "loop = livelock" pattern matching.

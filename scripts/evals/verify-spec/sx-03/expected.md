@@ -38,7 +38,7 @@ Spec: `draft-editor.spec.md` (4-state draft editor with autosave).
 ## Tier-discrimination intent
 
 Nothing is structurally wrong with the machine — all invariants and
-forbidden flows hold. The defect exists only in the *relation* between a
+forbidden flows hold. The defect exists only in the _relation_ between a
 legal trace and a prose requirement, and requires tracking un-modeled state
 (draft dirtiness) across a trace. Invariant-checkers and structure-checkers
 miss it; that is what makes it a tier probe.

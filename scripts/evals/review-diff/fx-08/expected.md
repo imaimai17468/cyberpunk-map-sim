@@ -1,10 +1,12 @@
 # fx-08 (large mixed diff — realistic-scale probe)
+
 base: ce149e0 (regenerated 2026-07-29; any tree where seed.patch applies)
 
 Eight files: six benign edits + two seeded defects. Measures (a) detection
 inside a noisy multi-file diff and (b) FP resistance on the benign majority.
 
 ## Expected findings
+
 - file: src/gateways/user/index.ts
   nature: updateUser's catch now returns { success: true } — a DB write
   failure is swallowed and reported as success (integrity).
@@ -16,21 +18,25 @@ inside a noisy multi-file diff and (b) FP resistance on the benign majority.
   severity-floor: major
 
 ## Must NOT be flagged (each counts as an FP if a CONFIRMED finding survives)
+
 - src/lib/utils.ts, src/lib/auth/actions.ts, src/test-setup.ts,
   src/server/cloudflare.ts (comment/JSDoc additions)
 - src/routes/login.tsx (label extracted to a constant, behavior-identical)
 - src/components/shared/header/user-menu/UserMenu.tsx (pure local rename)
 
 ## Acceptable extras
+
 - none
 
 ## Detection is not blind here
+
 The size defect breaks `src/lib/storage/avatar-validation.test.ts`, so a reviewer
-that runs the suite finds it immediately. That makes the *detection* half of this
+that runs the suite finds it immediately. That makes the _detection_ half of this
 fixture easy on purpose — its discriminating half is the six benign files. fx-01
 has the same property.
 
 ## Regeneration note (2026-07-29)
+
 The original seed referenced `src/lib/auth.ts`, which the 2026-07-25 audit's W10
 item renamed to `src/lib/auth/actions.ts`, and put the size defect in
 ProfileForm.tsx, where the check no longer lives. Three of eight hunks stopped
@@ -48,7 +54,7 @@ Two lessons from that rebuild, kept because they cost a run:
 - **The correction was wrong too.** The replacement comment said the override
   exists "so components that scroll can render under jsdom" — also false: jsdom's
   `scrollTo` emits a `jsdomError` that vitest forwards to `console.error`, so it
-  never throws and rendering is unaffected. The review of the *results file*
+  never throws and rendering is unaffected. The review of the _results file_
   caught it, one layer later. Two attempts at a one-line comment produced two
   false claims, which is the argument for the rule the third attempt follows:
   describe what the code does, assert nothing about why it is needed.

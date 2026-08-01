@@ -34,7 +34,7 @@ No commit-gate stamp is involved (design-time). Run fixtures one at a time.
   `expected.md` and not an acceptable extra.
 - **Close calls need repeated runs** (same rule and sources as the
   review-diff eval): a single-run delta is decisive only when large and
-  unanimous. The 2026-07-12 tier decision is a *boundary* example, not a
+  unanimous. The 2026-07-12 tier decision is a _boundary_ example, not a
   license: its precision edge came from one fixture out of three (n=1,
   stochastic — the results doc says a re-run could land either way), and it
   qualified only because the cost signal independently pointed the same way,
@@ -44,11 +44,11 @@ No commit-gate stamp is involved (design-time). Run fixtures one at a time.
 
 ## Fixture inventory
 
-| id | spec | expected counterexample |
-|---|---|---|
-| sx-01 | two-step wizard with a `back` action | forbidden flow: reach `submitted` twice (double-submit) via back→confirm→back→confirm, because `confirm` has no guard against re-entry from `done` |
-| sx-02 | 5-state checkout flow | liveness: `payment_failed` is a non-terminal dead end (no retry action), defeating R1; the voluntary browsing⇄cart cycle is a decoy that must NOT be confirmed |
-| sx-03 | 4-state draft editor with autosave | refinement: legal trace `open_editor → (dirty draft) → session_timeout` silently discards edits, defeating R1 while every invariant/forbidden flow holds; the autosave self-loop is a decoy |
+| id    | spec                                 | expected counterexample                                                                                                                                                                     |
+| ----- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| sx-01 | two-step wizard with a `back` action | forbidden flow: reach `submitted` twice (double-submit) via back→confirm→back→confirm, because `confirm` has no guard against re-entry from `done`                                          |
+| sx-02 | 5-state checkout flow                | liveness: `payment_failed` is a non-terminal dead end (no retry action), defeating R1; the voluntary browsing⇄cart cycle is a decoy that must NOT be confirmed                              |
+| sx-03 | 4-state draft editor with autosave   | refinement: legal trace `open_editor → (dirty draft) → session_timeout` silently discards edits, defeating R1 while every invariant/forbidden flow holds; the autosave self-loop is a decoy |
 
 ## Known coverage gaps (debt)
 

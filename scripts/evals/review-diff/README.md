@@ -1,12 +1,13 @@
 # review-diff golden eval
 
 Seeded-defect fixtures measuring the review pipeline (`code-reviewer` finder
-+ `review-verifier`, ADR-0015). Each fixture is a patch file (self-declared
-base) + an expected findings list. Scores and costs are recorded per run; a
-model-tier change to `code-reviewer` or `review-verifier`, or a load-bearing
-edit to `review-diff`, requires a run recorded here (AGENTS.md, Model
-continuity). The spec pipeline has its own eval at
-`scripts/evals/verify-spec/`.
+
+- `review-verifier`, ADR-0015). Each fixture is a patch file (self-declared
+  base) + an expected findings list. Scores and costs are recorded per run; a
+  model-tier change to `code-reviewer` or `review-verifier`, or a load-bearing
+  edit to `review-diff`, requires a run recorded here (AGENTS.md, Model
+  continuity). The spec pipeline has its own eval at
+  `scripts/evals/verify-spec/`.
 
 ## Layout
 
@@ -81,16 +82,16 @@ run must never satisfy the commit gate for real work).
 
 ## Fixture inventory
 
-| id | seeds | expected core finding |
-|---|---|---|
-| fx-01 | logic/boundary (zod min) | empty name accepted, message contradicts |
-| fx-02 | AGENTS.md type-escape (`as`) | banned assertion in ProfileForm |
-| fx-03 | react.md purity (Math.random in render) | non-idempotent render in UserMenu |
-| fx-04 | integrity (swallowed error) | success toast on failed update |
-| fx-05 | ~~delta scenario~~ (zod max vs message) | limit/message contradiction. **Delta framing retired** — ADR-0019 deleted delta mode; the seed still works as an ordinary full-mode detection fixture |
-| fx-06 | clean diff (benign constant extraction) | NONE — any confirmed finding is a false positive |
-| fx-07 | multi-file mixed (benign rename + state bug) | premature setPendingFile(null) discards avatar on failed upload; the rename must NOT be flagged |
-| fx-08 | large mixed diff, 8 files (6 benign + swallowed-error + inverted size check) | both defects found, zero FPs on the benign majority. Its `delta.patch` half is **retired** — ADR-0019 deleted delta mode; run the full half only |
+| id    | seeds                                                                        | expected core finding                                                                                                                                 |
+| ----- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| fx-01 | logic/boundary (zod min)                                                     | empty name accepted, message contradicts                                                                                                              |
+| fx-02 | AGENTS.md type-escape (`as`)                                                 | banned assertion in ProfileForm                                                                                                                       |
+| fx-03 | react.md purity (Math.random in render)                                      | non-idempotent render in UserMenu                                                                                                                     |
+| fx-04 | integrity (swallowed error)                                                  | success toast on failed update                                                                                                                        |
+| fx-05 | ~~delta scenario~~ (zod max vs message)                                      | limit/message contradiction. **Delta framing retired** — ADR-0019 deleted delta mode; the seed still works as an ordinary full-mode detection fixture |
+| fx-06 | clean diff (benign constant extraction)                                      | NONE — any confirmed finding is a false positive                                                                                                      |
+| fx-07 | multi-file mixed (benign rename + state bug)                                 | premature setPendingFile(null) discards avatar on failed upload; the rename must NOT be flagged                                                       |
+| fx-08 | large mixed diff, 8 files (6 benign + swallowed-error + inverted size check) | both defects found, zero FPs on the benign majority. Its `delta.patch` half is **retired** — ADR-0019 deleted delta mode; run the full half only      |
 
 ## Known coverage gaps (debt)
 
@@ -101,5 +102,5 @@ run must never satisfy the commit gate for real work).
   are kept as the record of what delta mode bought.
 - Nothing yet measures `fix` / `acceptance` quality (ADR-0020) beyond the
   per-survivor notes step 3 asks for. There is no seeded fixture whose expected
-  answer is a *fix*, so a degraded fix proposal on an otherwise correctly-found
+  answer is a _fix_, so a degraded fix proposal on an otherwise correctly-found
   defect would not score as a miss.

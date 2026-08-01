@@ -16,26 +16,26 @@ fx-02 (type escape), fx-03 (render purity), fx-04 (swallowed error), fx-05
 
 ## Scores
 
-| fixture | found | missed | FP | tokens (finder+verifier) | wall |
-|---|---|---|---|---|---|
-| fx-01 (logic/boundary) | 1/1 CONFIRMED | 0 | 0 | 28.9k + 28.4k = **57.3k** | 31s + 26s |
-| fx-06 (clean-diff FP probe) | n/a | n/a | **0** | 37.8k + 36.2k = **74.0k** | 55s + 24s |
-| fx-07 (benign rename + state bug) | 1/1 CONFIRMED | 0 | 0 | 40.1k + 38.3k = **78.4k** | 60s + 48s |
-| fx-08 (8 files, 2 defects) | 2/2 CONFIRMED | 0 | 0 | 43.0k + 33.7k = **76.7k** | 56s + 41s |
-| **total** | **4/4** | **0** | **0** | **286.4k** | **341s** |
+| fixture                           | found         | missed | FP    | tokens (finder+verifier)  | wall      |
+| --------------------------------- | ------------- | ------ | ----- | ------------------------- | --------- |
+| fx-01 (logic/boundary)            | 1/1 CONFIRMED | 0      | 0     | 28.9k + 28.4k = **57.3k** | 31s + 26s |
+| fx-06 (clean-diff FP probe)       | n/a           | n/a    | **0** | 37.8k + 36.2k = **74.0k** | 55s + 24s |
+| fx-07 (benign rename + state bug) | 1/1 CONFIRMED | 0      | 0     | 40.1k + 38.3k = **78.4k** | 60s + 48s |
+| fx-08 (8 files, 2 defects)        | 2/2 CONFIRMED | 0      | 0     | 43.0k + 33.7k = **76.7k** | 56s + 41s |
+| **total**                         | **4/4**       | **0**  | **0** | **286.4k**                | **341s**  |
 
 Plus 50.9k spent on a voided fx-08 finder run (see "What went wrong", below),
 for 337.3k across the whole exercise.
 
 ## Against the baseline
 
-| fixture | baseline outcome | baseline cost | this run | source (outcome / cost) |
-|---|---|---|---|---|
-| fx-01 | found | 59.0k, 69s | found, 57.3k, 57s | flat-pipeline / flat-pipeline |
-| fx-06 | 0 FP | 70.3k, 49s | 0 FP, 74.0k, 79s | noise-suppression / flat-pipeline |
-| fx-07 | found, 0 FP | 76.9k, 113s | found, 0 FP, 78.4k, 108s | noise-suppression / flat-pipeline |
-| fx-08 | 2 found, 0 FP | 81.8k | 2 found, 0 FP, 76.7k | fx08-large-diff / fx08-large-diff |
-| **total** | — | **288.0k** | **286.4k** | — |
+| fixture   | baseline outcome | baseline cost | this run                 | source (outcome / cost)           |
+| --------- | ---------------- | ------------- | ------------------------ | --------------------------------- |
+| fx-01     | found            | 59.0k, 69s    | found, 57.3k, 57s        | flat-pipeline / flat-pipeline     |
+| fx-06     | 0 FP             | 70.3k, 49s    | 0 FP, 74.0k, 79s         | noise-suppression / flat-pipeline |
+| fx-07     | found, 0 FP      | 76.9k, 113s   | found, 0 FP, 78.4k, 108s | noise-suppression / flat-pipeline |
+| fx-08     | 2 found, 0 FP    | 81.8k         | 2 found, 0 FP, 76.7k     | fx08-large-diff / fx08-large-diff |
+| **total** | —                | **288.0k**    | **286.4k**               | —                                 |
 
 Sources are `results/2026-07-12-flat-pipeline.md`,
 `results/2026-07-12-noise-suppression.md` and
@@ -46,7 +46,7 @@ costs come from the flat-pipeline run, which predates that tuning.
 
 No detection regression, no new false positives, and 286.4k against 288.0k — flat.
 The margins are inside the variance the README warns about, so the honest reading
-is "no measurable change", not "cheaper". What this comparison does *not* cover is
+is "no measurable change", not "cheaper". What this comparison does _not_ cover is
 listed under "Limits of this run" at the end.
 
 ## The risk ADR-0020 named
@@ -71,11 +71,11 @@ one carried a `fix` naming a specific edit (not a restatement) and an
 `acceptance` that is checkable without re-running the review — commands in three
 cases, an observable code state in the rest. Two worth quoting as the standard:
 
-- fx-08: *"Revert the operator … This is the only correct shape — the function's
+- fx-08: _"Revert the operator … This is the only correct shape — the function's
   contract (docstring lines 56-63) and every existing test case … require `>`,
-  not `<`"*, accepted by running the affected test file.
-- fx-01: identified the change as *"a one-character typo-style regression … not
-  a deliberate relaxation"*, which is the judgement that distinguishes a fix
+  not `<`"_, accepted by running the affected test file.
+- fx-01: identified the change as _"a one-character typo-style regression … not
+  a deliberate relaxation"_, which is the judgement that distinguishes a fix
   from a guess.
 
 The decision-exemption path was exercised for real on this change's own review:
@@ -83,7 +83,7 @@ asked whether to run the eval now or track it as debt, the verifier declined to
 choose and returned the two credible options with their trade-off — which is the
 behaviour the exemption exists for.
 
-It also found a gap in the contract *while following it*: the exemption said what
+It also found a gap in the contract _while following it_: the exemption said what
 `fix` should hold but not `acceptance`, so it had to invent a convention. Fixed
 in the same change.
 
@@ -118,7 +118,7 @@ assert nothing verifiable, or they stop being benign. Recorded in
 `scrollTo` override exists so scrolling components can render — also false, for
 the same reason in the other direction: jsdom emits a `jsdomError` that vitest
 forwards to `console.error`, so nothing throws and rendering never depended on
-it. The review of *this results file* caught that, a layer after the run. Two
+it. The review of _this results file_ caught that, a layer after the run. Two
 attempts at a one-line comment produced two false claims; the third asserts
 nothing. Worth recording because it says something about where the effort goes:
 the reviewing side of this pipeline was more accurate than its author at every
@@ -128,7 +128,7 @@ step of this exercise.
 
 - Four of eight fixtures. Detection on type-escape, render-purity and
   swallowed-error natures is unmeasured against this change.
-- Nothing here scores `fix` / `acceptance` *quality* — no fixture has an expected
+- Nothing here scores `fix` / `acceptance` _quality_ — no fixture has an expected
   fix, so a correct detection with a degraded remedy would still score clean. The
   assessment above is a reading of four survivors, not a measurement. Recorded as
   a coverage gap in `../README.md`.

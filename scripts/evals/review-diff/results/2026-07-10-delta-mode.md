@@ -5,12 +5,12 @@ Run after the delta-mode skill change (commit 80f60be), compared against
 
 ## Quality non-regression (full-mode re-runs)
 
-| fixture | baseline | re-run | tokens (base → now) | wall time (base → now) |
-|---|---|---|---|---|
-| fx-01 | found | **found** | 34,755 → 37,438 | 57s → 97s |
-| fx-02 | found | **found** | 41,842 → 54,526 | 144s → 210s |
-| fx-03 | found | **found** | 40,478 → 39,704 | 59s → 87s |
-| fx-04 | found | **found** | 38,149 → 40,883 | 74s → 108s |
+| fixture | baseline | re-run    | tokens (base → now) | wall time (base → now) |
+| ------- | -------- | --------- | ------------------- | ---------------------- |
+| fx-01   | found    | **found** | 34,755 → 37,438     | 57s → 97s              |
+| fx-02   | found    | **found** | 41,842 → 54,526     | 144s → 210s            |
+| fx-03   | found    | **found** | 40,478 → 39,704     | 59s → 87s              |
+| fx-04   | found    | **found** | 38,149 → 40,883     | 74s → 108s             |
 
 4/4 found, 0 missed, 0 false positives — no quality regression. All reports
 now include the new `mode` field ("full"). Wall time rose near-uniformly
@@ -26,10 +26,10 @@ saturated.
 
 ## Delta-mode measurement (fx-05)
 
-| run | mode | found | tokens | wall time | tool uses |
-|---|---|---|---|---|---|
-| baseline (full) | full | 1/1 | 43,035 | 96s | 13 |
-| **delta** (prior report + delta description) | delta | 1/1 | **37,632** | **78s** | **5** |
+| run                                          | mode  | found | tokens     | wall time | tool uses |
+| -------------------------------------------- | ----- | ----- | ---------- | --------- | --------- |
+| baseline (full)                              | full  | 1/1   | 43,035     | 96s       | 13        |
+| **delta** (prior report + delta description) | delta | 1/1   | **37,632** | **78s**   | **5**     |
 
 - Delta run: −13% tokens, −19% wall time, −62% tool uses vs the full
   baseline on the same seeded defect. No whole-project verification commands
@@ -37,7 +37,7 @@ saturated.
   vitest). Finding quality unchanged (CONFIRMED, correct file/line/nature).
 - Honest caveat: this fixture's diff is one hunk, so full mode is already
   cheap — the absolute saving here is small. Delta mode's payoff scales with
-  the size of the *unchanged* portion of a real diff, which this fixture set
+  the size of the _unchanged_ portion of a real diff, which this fixture set
   does not measure. The observed win on even the smallest diff plus the
   observed real-world delta re-reviews earlier the same day (~60–65k tokens
   on multi-file doc diffs, vs ~95–105k for comparable full re-reviews) are

@@ -4,6 +4,7 @@ import {
   type DistrictKind,
   type GenerationParams,
 } from "@/entities/city";
+import { GOLDEN_CITIES, GOLDEN_PARAMS } from "./golden";
 import { generateCity, zoningStageBytes } from "./pipeline";
 import { expectedLotCount, unclampedAreaScale } from "./stages/lots";
 import { gridOf } from "./stages/types";
@@ -13,9 +14,8 @@ import { totalInstanceCount } from "./stages/assemble";
  * End-to-end pipeline invariants.
  *
  * Runs at a reduced grid so the suite stays fast; the properties asserted are
- * scale-independent. Golden content hashes are deliberately NOT committed yet —
- * they would lock in tuning that has not been looked at on screen, and a golden
- * that nobody has validated visually is a test that only asserts "unchanged".
+ * scale-independent. Golden hashes live in `golden.ts` and are asserted below;
+ * they were withheld until the tuning they freeze had been looked at on screen.
  */
 
 const params = (
@@ -222,6 +222,50 @@ describe("count-control clamp saturation", () => {
         (sizeM * sizeM) / 1_000_000
       );
       expect(ratio < MAX_ACCEPTED_UNCLAMPED).toBe(true);
+    }
+  );
+});
+
+/**
+ * Golden hashes. See `golden.ts` for why they exist and when to regenerate.
+ *
+ * The per-stage assertion is the useful one: it names every stage whose hash
+ * diverged, rather than reporting only that the city changed. It does not rank
+ * them — vitest lists mismatched keys alphabetically, not in pipeline order —
+ * so when several diverge together, cross-reference `STAGE_NAMES` to find the
+ * upstream one. The whole-model hash is asserted separately so a serialisation
+ * change that leaves every stage intact still fails.
+ */
+describe("golden hashes", () => {
+  // Memoised: the stage-hash and content-hash assertions are separate tests
+  // (single-expect), but they should not pay for two generations per seed.
+  // Seeded from the module-level fixture: `params()`'s defaults are exactly
+  // GOLDEN_PARAMS with seed akiba-01, so an empty cache paid for a second full
+  // generation (~450ms) of a city this file had already built.
+  const cache = new Map<string, ReturnType<typeof generateCity>>([
+    [city.params.seed, city],
+  ]);
+  const goldenFor = (seed: string) => {
+    const hit = cache.get(seed);
+    if (hit !== undefined) return hit;
+    const generated = generateCity(params({ seed, ...GOLDEN_PARAMS }));
+    cache.set(seed, generated);
+    return generated;
+  };
+
+  it.each(Object.keys(GOLDEN_CITIES))(
+    "should reproduce every stage hash when generating seed %s",
+    (seed) => {
+      expect(goldenFor(seed).stageHashes).toEqual(
+        GOLDEN_CITIES[seed].stageHashes
+      );
+    }
+  );
+
+  it.each(Object.keys(GOLDEN_CITIES))(
+    "should reproduce the content hash when generating seed %s",
+    (seed) => {
+      expect(goldenFor(seed).contentHash).toBe(GOLDEN_CITIES[seed].contentHash);
     }
   );
 });

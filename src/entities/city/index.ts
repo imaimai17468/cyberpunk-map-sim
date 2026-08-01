@@ -237,7 +237,7 @@ export interface CityModel {
   readonly lotPolygons: PolygonPool;
   readonly buildings: readonly Building[];
   readonly instances: Readonly<Record<BuildingArchetype, InstanceBuffer>>;
-  /** Per-stage content hash; a golden failure names the first divergent stage. */
+  /** Per-stage content hash; a golden failure names each divergent stage. */
   readonly stageHashes: Readonly<Record<StageName, string>>;
   readonly contentHash: string;
 }

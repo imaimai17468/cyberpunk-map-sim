@@ -1,0 +1,288 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__aegis__*",
+      "mcp__aegis-admin__*",
+      "mcp__plugin_context7_context7__*",
+      "mcp__pencil__*",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__*",
+      "mcp__claude_ai_Asana__*",
+      "mcp__claude_ai_Atlassian__*",
+      "mcp__claude_ai_Google_Drive__*",
+      "mcp__claude_ai_Notion__*",
+      "mcp__claude_ai_Slack__*",
+      "WebSearch",
+      "WebFetch",
+      "Bash(tree:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(echo:*)",
+      "Bash(mkdir:*)",
+      "Bash(touch:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git blame:*)",
+      "Bash(git add:*)",
+      "Bash(git stash:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh api:*)",
+      "Bash(gh run view:*)",
+      "Bash(bun run lint)",
+      "Bash(bun run lint:fix)",
+      "Bash(bun run format)",
+      "Bash(bun run format:fix)",
+      "Bash(bun run check)",
+      "Bash(bun run check:fix)",
+      "Bash(bun run typecheck)",
+      "Bash(bun run test)",
+      "Bash(bun run knip)",
+      "Bash(bun run generate-routes)",
+      "Bash(bun run cf-typegen)",
+      "Bash(bun add -E:*)",
+      "Bash(bun remove:*)",
+      "Bash(bun pm:*)",
+      "Bash(bun install:*)",
+      "Bash(wrangler types:*)",
+      "Bash(wrangler d1 list:*)",
+      "Bash(wrangler tail:*)",
+      "Bash(find:*)",
+      "Bash(ffmpeg:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(rm -fr:*)",
+      "Bash(rm -r:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push --force-with-lease:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean -fd:*)",
+      "Bash(git clean -fdx:*)",
+      "Bash(git branch -D:*)",
+      "Bash(git checkout .)",
+      "Bash(git checkout --:*)",
+      "Bash(git restore .)",
+      "Bash(git restore --:*)",
+      "Bash(git commit --amend:*)",
+      "Bash(git rebase -i:*)",
+      "Bash(sudo:*)",
+      "Bash(chmod -R:*)",
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env.development)",
+      "Read(./.env.production)",
+      "Edit(./.env)",
+      "Edit(./.env.local)",
+      "Edit(./.env.development)",
+      "Edit(./.env.production)",
+      "Write(./.claude/.review-stamp)",
+      "Edit(./.claude/.review-stamp)",
+      "Write(./.claude/.finder-done)",
+      "Edit(./.claude/.finder-done)",
+      "Write(./.claude/.finder-hash)",
+      "Edit(./.claude/.finder-hash)",
+      "Write(./.claude/.pair-ok)",
+      "Edit(./.claude/.pair-ok)"
+    ],
+    "ask": [
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git merge:*)",
+      "Bash(git rebase:*)",
+      "Bash(git cherry-pick:*)",
+      "Bash(git reset:*)",
+      "Bash(git checkout:*)",
+      "Bash(git revert:*)",
+      "Bash(git tag:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr edit:*)",
+      "Bash(gh pr close:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr comment:*)",
+      "Bash(gh issue:*)",
+      "Bash(bun add:*)",
+      "Bash(bunx:*)",
+      "Bash(bun run deploy:*)",
+      "Bash(bun run preview:*)",
+      "Bash(bun run db:push:*)",
+      "Bash(bun run db:generate:*)",
+      "Bash(drizzle-kit generate:*)",
+      "Bash(wrangler deploy:*)",
+      "Bash(wrangler d1 execute:*)",
+      "Bash(wrangler r2:*)",
+      "Bash(wrangler secret:*)",
+      "Bash(rm:*)",
+      "Bash(mv:*)",
+      "Bash(cp:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": ["aegis", "aegis-admin"],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start-env-check.sh",
+            "timeout": 15,
+            "statusMessage": "Env check: gate dependencies + session marker reset..."
+          },
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start-aegis-hydrate.sh",
+            "timeout": 120,
+            "statusMessage": "Aegis hydrate: building local knowledge base from aegis-share/source if missing..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-gate.sh",
+            "timeout": 5,
+            "statusMessage": "Prompt gate: clearing aegis stamp + AGENTS.md pointer..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop-gate.sh",
+            "timeout": 120,
+            "statusMessage": "Stop gate: typecheck / lint / format / knip / similarity + aegis sync check..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__aegis__aegis_compile_context|mcp__aegis-admin__aegis_compile_context",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-aegis-compile-guard.sh",
+            "timeout": 5,
+            "statusMessage": "Pre-aegis guard: intent_tags check + review stamp clear..."
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-agent-aegis-guard.sh",
+            "timeout": 5,
+            "statusMessage": "Pre-agent guard: confirming aegis_compile_context invocation..."
+          },
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-agent-review-clear.sh",
+            "timeout": 5,
+            "statusMessage": "Review gate: starting a cycle, recording the tree the finder will read..."
+          },
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-agent-review-pair.sh",
+            "timeout": 5,
+            "statusMessage": "Review gate: checking the tree is unchanged since the finder dispatch..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-bash-guard.sh",
+            "timeout": 30,
+            "statusMessage": "Bash guard: .env protection + review gate check..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__aegis__aegis_compile_context|mcp__aegis-admin__aegis_compile_context",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-aegis-compile.sh",
+            "timeout": 3,
+            "statusMessage": "Post-aegis: gate stamp + near-miss warn..."
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__aegis-admin__aegis_sync_docs|mcp__aegis-admin__aegis_import_doc",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-aegis-share-sync.sh",
+            "timeout": 120,
+            "statusMessage": "Aegis share sync: DB -> aegis-share/ (format -> lint -> materialize -> export)..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-bash-stamp-consume.sh",
+            "timeout": 15,
+            "statusMessage": "Review gate: consume stamp when a commit leaves the tree clean..."
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "code-reviewer",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-agent-review-stamp.sh finder",
+            "timeout": 3,
+            "statusMessage": "Review gate: recording the diff the finder reviewed..."
+          }
+        ]
+      },
+      {
+        "matcher": "review-verifier",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-agent-review-stamp.sh verifier",
+            "timeout": 3,
+            "statusMessage": "Review gate: stamping the commit gate after the verifier..."
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true,
+    "chrome-devtools-mcp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "context7@claude-plugins-official": true
+  },
+  "plansDirectory": "./.claude/plans"
+}

@@ -1,0 +1,158 @@
+# My App
+
+TanStack Start + TypeScript + Tailwind CSS + shadcn/ui を使用したモダンな Web アプリケーションテンプレートです。
+
+## 技術スタック
+
+- **Framework**: TanStack Start (TanStack Router + Vite)
+- **Language**: TypeScript 7 (native compiler)
+- **Styling**: Tailwind CSS v4
+- **UI Components**: shadcn/ui (Radix UI primitives)
+- **Authentication**: Better Auth (Google OAuth)
+- **Database**: Cloudflare D1 (SQLite) + Drizzle ORM
+- **Storage**: Cloudflare R2
+- **Hosting**: Cloudflare Workers (@cloudflare/vite-plugin)
+- **Code Quality**: oxlint (linting) + oxfmt (formatting)
+- **Testing**: Vitest + Testing Library
+- **Package Manager**: Bun
+- **Git Hooks**: Lefthook
+
+## クイックスタート
+
+```bash
+git clone <your-repo-url>
+cd <your-repo-name>
+bun install
+cp .env.local.example .env.local
+bun run dev
+```
+
+http://localhost:5173 でアクセス。`@cloudflare/vite-plugin` により、`bun run dev` でも Cloudflare D1 / R2 バインディングが有効です。
+
+データベース・認証・ストレージのセットアップ手順は [docs/DATABASE_SETUP.md](./docs/DATABASE_SETUP.md)、デプロイ・ロールバック・シークレット運用は [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)、このテンプレートを新規プロジェクトに使う手順は [docs/FORKING.md](./docs/FORKING.md) を参照。
+
+AI エージェント用の Aegis ナレッジベース（`.aegis/`、gitignore 済み）は、初回の Claude Code セッション開始時に SessionStart フックが `aegis-share/`（git 管理のバンドル）から自動構築します。手動で構築する場合: `npx -y @fuwasegu/aegis share-hydrate`
+
+## Scripts
+
+| Command                   | Description                                     |
+| ------------------------- | ----------------------------------------------- |
+| `bun run dev`             | Start dev server (with CF bindings via workerd) |
+| `bun run build`           | Production build                                |
+| `bun run preview`         | Build & preview in local workerd                |
+| `bun run deploy`          | Build & deploy to Cloudflare Workers            |
+| `bun run typecheck`       | Type check with tsc (TypeScript 7 native)       |
+| `bun run lint`            | Run oxlint (type-aware)                         |
+| `bun run lint:fix`        | Run oxlint with auto-fix                        |
+| `bun run format`          | Check formatting with oxfmt                     |
+| `bun run format:fix`      | Format with oxfmt                               |
+| `bun run check`           | lint + format check (same as pre-push hook)     |
+| `bun run check:fix`       | lint + format with auto-fix                     |
+| `bun run generate-routes` | Regenerate TanStack Router route tree           |
+| `bun run knip`            | Detect unused deps/exports/files                |
+| `bun run test`            | Run tests with Vitest                           |
+| `bun run cf-typegen`      | Generate `CloudflareEnv` from `wrangler.toml`   |
+| `bun run db:generate`     | Generate Drizzle migrations from the schema     |
+| `bun run db:push`         | Push the schema to the remote D1 database       |
+| `bun run db:push:local`   | Set up / migrate the local D1 database          |
+| `bun run db:seed:local`   | Seed the local D1 database with dev data        |
+| `bun run db:studio`       | Open Drizzle Studio                             |
+| `bun run db:pull`         | Introspect the remote D1 schema                 |
+
+## Tools
+
+- **[shadcn/ui](https://ui.shadcn.com/)** — UI components (`components.json`)
+- **[TypeScript 7](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/)** — Type checker (Go-native `tsc`)
+- **[oxlint](https://oxc.rs/docs/guide/usage/linter)** — Linter (`.oxlintrc.json`)
+- **[oxfmt](https://oxc.rs/docs/guide/usage/formatter)** — Formatter (`.oxfmtrc.json`)
+- **[lefthook](https://github.com/evilmartians/lefthook)** — Git hooks (`lefthook.yml`、`bun install` 時に `prepare` スクリプトで自動セットアップ)
+- **[knip](https://knip.dev/)** — Unused deps/exports/files detection (`knip.json`)
+- **[similarity-ts](https://github.com/mizchi/similarity)** — Code similarity detector
+- **python3** — ゲート用スクリプトの実行環境（下記）
+
+### python3 が要るもの
+
+`scripts/` の Python スクリプトはビルドには関与しませんが、ゲートの一部です。多くの macOS / Linux 環境には既に入っています。入っていなければ SessionStart の env-check が報告するので、そのとき入れれば足ります。
+
+| スクリプト | 役割 |
+| --- | --- |
+| `check-md-links.py` | markdown の相対リンク切れを検出。Stop gate と CI が自動実行 |
+| `test-review-gate.py` | レビューゲートのフック挙動を実物に対して検証 |
+| `test-md-links.py` | 上記リンクチェッカー自身の回帰テスト |
+| `test-bash-guard.py` | Bash ガード（`.env` 保護・`find` の到達範囲・コミットゲート）の検証 |
+| `test-aegis-gate.py` | Aegis dispatch ゲートの検証 |
+
+`test-*.py` は該当フックを触ったときに手で回します（`python3 scripts/test-review-gate.py` など）。未インストールの環境では SessionStart の env-check が欠落を報告し、Stop gate はリンクチェックを「スキップした」と明示します（黙って合格扱いにはなりません）。
+
+### similarity-ts のインストール
+
+`similarity-ts` は Rust 製のため `cargo` が必要です。別途インストールしてプロジェクトルートから実行：
+
+```bash
+cargo install similarity-ts
+
+similarity-ts ./src                  # デフォルト
+similarity-ts ./src --print          # マッチしたコードを表示
+similarity-ts ./src --threshold 0.7  # デフォルトは 0.85
+```
+
+Stop quality gate hook が自動実行するので、手動実行は調査時のみ。未インストールの環境では SessionStart の env-check が欠落を報告し、Stop gate は「スキップした」と明示します（黙って合格扱いにはなりません）。
+
+## プロジェクト構成
+
+```
+src/
+├── routes/                 # TanStack Router file-based routes
+│   ├── __root.tsx          # Root layout (ThemeProvider, Header, Toaster)
+│   ├── index.tsx           # Home page
+│   ├── login.tsx           # Login page
+│   ├── profile.tsx         # Profile page (auth guard via beforeLoad)
+│   └── api/                # API routes (auth catch-all, avatars)
+├── server/
+│   ├── cloudflare.ts       # CloudflareEnv helper (cloudflare:workers)
+│   └── fn/                 # Server functions (createServerFn)
+├── components/             # Shared UI components
+│   ├── ui/                 # shadcn/ui primitives
+│   ├── shared/             # Cross-page shared components
+│   └── features/           # Feature-specific components
+├── lib/
+│   ├── auth/               # Better Auth 設定
+│   ├── drizzle/            # Drizzle ORM スキーマ
+│   ├── storage/            # R2 ストレージ
+│   └── utils.ts
+├── router.tsx              # TanStack Router definition
+├── client.tsx              # Browser entry (hydrateRoot)
+├── ssr.tsx                 # Server entry (Cloudflare Worker handler)
+└── styles.css              # Tailwind v4 tokens
+```
+
+各ページの機能別コンポーネントは `src/components/features/<feature>/` にコロケーションします。
+
+## AI エージェントで開発する
+
+このリポジトリは Claude Code (および superpowers / aegis MCP) を前提に組まれています。これらが使えない環境でも、AGENTS.md「Degraded Environments」の代替経路で動作は継続します（無いツールは明示的に degrade し、黙って省略はしません）。フロー全体・hook 構成・aegis / superpowers の役割分担などは:
+
+- **[docs/agent-workflow.md](./docs/agent-workflow.md)** — タスクの流れ・常時動いている層・メンテナンスループ・特殊フローの全体像
+- **[AGENTS.md](./AGENTS.md)** — 常時ロードされるコーディング規約 (凝縮版を直接記載、ADR-0008)
+- **Aegis KB (`aegis-share/source/documents/`)** — 主要設計判断の長期記録 (なぜ今こう決まっているのか)
+
+`/start-workflow` は ticket 粒度の作業をエージェントが検知して自律的に invoke します（手動でも呼べます）。trivial な 1 行修正・config 1 値・docs only な変更はこのフローに乗せず直接編集します。コミット前のレビューは `/review-diff` が担います — 親が `code-reviewer`（finder、候補を返す）→ `review-verifier`（候補を実コードで反証）をフラットに順次 dispatch し、finder が同一 diff で先行した場合のみ verifier の完走がコミットゲートを stamp します（ADR-0015）。レビューが完走するまで `git commit` はフックでブロックされます（ADR-0013）。verifier を通過した所見への修正は stamp を消さないので再レビューは不要です — find → verify → fix → done の一発勝負です（ADR-0019/0020）。レビューパイプライン自体の品質は golden eval（`scripts/evals/`）で回帰計測されます（ADR-0014）。コミット・PR はエージェントが AGENTS.md の規律に従って提案し、ユーザー確認後に実行します。
+
+## shadcn/ui
+
+```bash
+bunx shadcn@latest add [component-name]
+```
+
+## 参考リンク
+
+- [TanStack Start](https://tanstack.com/start/)
+- [TanStack Router](https://tanstack.com/router/)
+- [Tailwind CSS](https://tailwindcss.com/docs)
+- [shadcn/ui](https://ui.shadcn.com/)
+- [Better Auth](https://www.better-auth.com/)
+- [Cloudflare D1](https://developers.cloudflare.com/d1/)
+- [Cloudflare R2](https://developers.cloudflare.com/r2/)
+- [@cloudflare/vite-plugin](https://developers.cloudflare.com/workers/vite-plugin/)
+- [oxc (oxlint/oxfmt)](https://oxc.rs/)
+- [Vitest](https://vitest.dev/)

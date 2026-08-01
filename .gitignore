@@ -1,0 +1,67 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js (legacy — keep until all clones are clean)
+.next/
+
+# tanstack start (vite)
+/dist
+.tanstack/
+.vite/
+src/routeTree.gen.ts
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.local.example
+# Wrangler local secrets (not covered by the .env* glob);
+# glob also catches env-specific files like .dev.vars.staging
+.dev.vars*
+!.dev.vars.example
+
+# cloudflare
+.wrangler
+worker-configuration.d.ts
+
+# typescript
+*.tsbuildinfo
+
+*storybook.log
+storybook-static
+.superpowers/
+
+# aegis (runtime DB is local-only; aegis-share/ is version-controlled)
+.aegis/
+
+# claude code runtime artifacts
+.claude/scheduled_tasks.lock
+.claude/.review-stamp
+.claude/.finder-done
+.claude/.finder-hash
+.claude/.pair-ok
+.claude/.aegis-stamp
+.claude/.aegis-unavailable

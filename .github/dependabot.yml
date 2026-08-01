@@ -1,0 +1,24 @@
+version: 2
+updates:
+  # `bun` (not `npm`) so Dependabot regenerates bun.lock alongside package.json —
+  # with `npm` every PR fails CI's `bun install --frozen-lockfile` (see PRs #30–#34).
+  # Note: the bun ecosystem supports version updates only, not security updates;
+  # direct-dep vulnerabilities are still gated by scripts/audit-direct.sh (ADR-0002).
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: chore
+      include: scope

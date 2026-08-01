@@ -116,7 +116,12 @@ export const generateCity = (
 
   report("lots");
   const lotLayer = lotsStage(
-    { blocks: zonedBlocks, blockPolygons: blockLayer.polygons, grid },
+    {
+      blocks: zonedBlocks,
+      blockPolygons: blockLayer.polygons,
+      grid,
+      roads: blockLayer.roads,
+    },
     streamFor("lots")
   );
 
@@ -156,14 +161,40 @@ export const generateCity = (
       .u32(roads.edges.length)
       .f32Array(roads.polylines.coords)
       .finish(),
+    // The road graph is part of this stage's output, not just the polygons:
+    // blocks emits the subdivision cuts as street edges. Hashing only the
+    // polygons left that half unwitnessed — the streets could have vanished
+    // entirely and every golden would still have passed.
     blocks: byteWriter()
       .u32(blockLayer.blocks.length)
       .f32Array(blockLayer.polygons.coords)
+      .u32(blockLayer.roads.edges.length)
+      .f32Array(blockLayer.roads.polylines.coords)
       .finish(),
     zoning: zoningStageBytes(zonedBlocks),
+    // `frontageDir` is this stage's output too, and it decides which axis a
+    // building squares up to. Hashing only the rings left it unwitnessed, so an
+    // orientation regression born here would surface as a `buildings` hash
+    // change and be localised to the wrong stage. The presence flag is separate
+    // from the components because a null direction and a genuine (0, 0) must
+    // not hash alike.
     lots: byteWriter()
       .u32(lotLayer.lots.length)
       .f32Array(lotLayer.polygons.coords)
+      .u8Array(
+        Uint8Array.from(
+          lotLayer.lots.map((lot) => (lot.frontageDir === null ? 0 : 1))
+        )
+      )
+      .f32Array(
+        Float32Array.from(
+          lotLayer.lots.flatMap((lot) =>
+            lot.frontageDir === null
+              ? [0, 0]
+              : [lot.frontageDir.x, lot.frontageDir.y]
+          )
+        )
+      )
       .finish(),
     buildings: byteWriter()
       .u32(buildingLayer.buildings.length)

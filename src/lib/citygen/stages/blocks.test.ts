@@ -225,7 +225,45 @@ describe("blocksStage", () => {
     expect(dense.blocks.length).toBeGreaterThan(layer.blocks.length);
   });
 
-  it("should pass the arterial graph through unchanged when subdividing", () => {
-    expect(layer.roads).toBe(emptyRoads);
+  it("should keep every arterial edge when subdividing", () => {
+    expect(layer.roads.edges.slice(0, emptyRoads.edges.length)).toEqual(
+      emptyRoads.edges
+    );
+  });
+
+  it("should emit street edges when the subdivision makes cuts", () => {
+    expect(
+      layer.roads.edges.filter((edge) => edge.cls === "street").length
+    ).toBeGreaterThan(0);
+  });
+
+  /**
+   * The cut between two blocks belongs to both of their rings, so without
+   * deduplication every interior street would be emitted twice and the map
+   * would draw each one over itself.
+   */
+  it("should emit a cut once when two blocks share it", () => {
+    const streets = layer.roads.edges.filter((edge) => edge.cls === "street");
+    const keys = streets.map((edge) => {
+      const start = layer.roads.polylines.starts[edge.polylineIndex];
+      const end = layer.roads.polylines.starts[edge.polylineIndex + 1];
+      const at = (i: number): string =>
+        `${layer.roads.polylines.coords[i * 2].toFixed(2)},${layer.roads.polylines.coords[i * 2 + 1].toFixed(2)}`;
+      return [at(start), at(end - 1)].toSorted().join("|");
+    });
+    expect(new Set(keys).size).toBe(streets.length);
+  });
+
+  it("should address a two-point polyline when emitting a street edge", () => {
+    const { starts } = layer.roads.polylines;
+    expect(
+      layer.roads.edges
+        .filter((edge) => edge.cls === "street")
+        .every(
+          (edge) =>
+            edge.polylineIndex + 1 < starts.length &&
+            starts[edge.polylineIndex + 1] - starts[edge.polylineIndex] === 2
+        )
+    ).toBe(true);
   });
 });

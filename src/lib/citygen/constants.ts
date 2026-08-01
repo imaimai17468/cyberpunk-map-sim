@@ -1,4 +1,4 @@
-import type { DistrictKind } from "@/entities/city";
+import type { DistrictKind, RoadClass } from "@/entities/city";
 
 /**
  * Every tuned number in the generator, in one place.
@@ -120,6 +120,38 @@ export const ARTERIALS = {
   /** Discount applied along the waterfront so the strip hugs the shore. */
   stripWaterBandDiscount: 0.6,
 } as const;
+
+/**
+ * Carriageway width per road class, kerb to kerb, in metres.
+ *
+ * Until this existed a road was a centreline with no width at all, and because
+ * a block is a face of the road graph, the block boundary *was* that centreline
+ * — so a building set back 4 m from its lot stood 4 m from the middle of the
+ * road. Measured on akiba-01 before this change: 526 of 5798 buildings (9.1%)
+ * stood inside the carriageway of the road they fronted, the closest 0.03 m
+ * from its centre.
+ *
+ * The figures are ordinary urban cross-sections: two 3.5 m lanes plus kerbs for
+ * a street, four lanes plus a median for an avenue, four lanes plus shoulders
+ * for a highway, and a single service lane for an alley. Half of each is taken
+ * off the block on the edge that road bounds, so the gap between two blocks is
+ * one full carriageway.
+ */
+export const ROAD_WIDTH_M: Readonly<Record<RoadClass, number>> = {
+  highway: 30,
+  avenue: 22,
+  street: 11,
+  alley: 4,
+};
+
+/**
+ * Minimum buildable area left after the carriageway is taken off a block.
+ *
+ * A block narrower than the roads around it insets to nothing or turns inside
+ * out. Below this it yields no lots at all, which is the honest outcome: the
+ * space is roadway, not a plot.
+ */
+export const MIN_BUILDABLE_BLOCK_M2 = 120;
 
 /** Stage 7 — blocks. */
 export const BLOCKS = {

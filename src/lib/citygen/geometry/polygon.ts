@@ -1,4 +1,5 @@
 import type { Vec2 } from "@/entities/city";
+import { segmentIntersection } from "./intersect";
 import { add, normalize, perp, scale, sub } from "./vec";
 
 /**
@@ -102,13 +103,34 @@ const lineIntersection = (p1: Vec2, d1: Vec2, p2: Vec2, d2: Vec2): Vec2 => {
 export const insetPolygon = (
   ring: readonly Vec2[],
   distance: number
+): readonly Vec2[] =>
+  insetPolygonPerEdge(
+    ring,
+    ring.map(() => distance)
+  );
+
+/**
+ * The same inward inset, but with a distance chosen per edge.
+ *
+ * Roads have a width and the roads around one block do not all have the same
+ * one, so the amount a block gives up differs edge by edge: half a highway on
+ * the side a highway runs, nothing at all on the map border. `distances[i]`
+ * applies to the edge leaving `ring[i]`, which is the same indexing a block's
+ * `boundary` array uses, so the two line up without a translation step.
+ *
+ * Vertex count is preserved, so an edge-indexed array stays valid against the
+ * result. The convexity caveat above applies here too.
+ */
+export const insetPolygonPerEdge = (
+  ring: readonly Vec2[],
+  distances: readonly number[]
 ): readonly Vec2[] => {
   const n = ring.length;
   if (n < 3) return ring;
   const offsetEdges = ring.map((point, i) => {
     const next = ring[(i + 1) % n];
     const dir = normalize(sub(next, point));
-    return { dir, offsetPoint: add(point, scale(perp(dir), distance)) };
+    return { dir, offsetPoint: add(point, scale(perp(dir), distances[i])) };
   });
   return ring.map((_, i) => {
     const prev = offsetEdges[(i - 1 + n) % n];
@@ -119,6 +141,36 @@ export const insetPolygon = (
       curr.offsetPoint,
       curr.dir
     );
+  });
+};
+
+/**
+ * True when two non-adjacent edges of `ring` cross.
+ *
+ * The inset above folds a concave ring inside out once the distance exceeds
+ * what the concavity can absorb, and it neither detects nor repairs that. Area
+ * is no guard: the shoelace sum of a self-crossing ring counts the inverted
+ * lobe with the opposite sign, so a folded polygon can report a perfectly
+ * ordinary area.
+ *
+ * Measured over the three golden seeds at 2048 m / 128 cells, insetting the
+ * blocks by their carriageways folded 1, 9 and 69 rings — and in all three the
+ * area floor rejected none of them. Every fold would have passed through as
+ * valid geometry, so this is what catches them.
+ *
+ * Adjacent edges are skipped because they legitimately share an endpoint.
+ */
+export const isSelfIntersecting = (ring: readonly Vec2[]): boolean => {
+  const n = ring.length;
+  if (n < 4) return false;
+  return ring.some((a1, i) => {
+    const a2 = ring[(i + 1) % n];
+    return ring.some((b1, j) => {
+      // Only j > i + 1, and never the pair that wraps to meet edge 0.
+      if (j <= i + 1 || (i === 0 && j === n - 1)) return false;
+      const b2 = ring[(j + 1) % n];
+      return segmentIntersection(a1, a2, b1, b2).kind !== "none";
+    });
   });
 };
 

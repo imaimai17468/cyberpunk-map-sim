@@ -26,6 +26,7 @@ import {
   luxuryMassing,
   type MassingContext,
   megabuildingMassing,
+  obbAlignedTo,
   slumBaseZ,
   slumFloorHeight,
   slumMassing,
@@ -342,6 +343,7 @@ const rawLot = (id: number, blockId: number): Lot => ({
   blockId,
   ringIndex: id,
   frontage: "street",
+  frontageDir: null,
 });
 
 describe("buildingsStage", () => {
@@ -398,8 +400,15 @@ describe("buildingsStage", () => {
     ).toThrow("buildings: unknown block id 999");
   });
 
+  /**
+   * The lot is shallow and the strip runs past it rather than through it. Both
+   * matter: the snap needs the strip within `facingSnapM` of the lot centroid,
+   * and the footprint needs to clear the strip's own carriageway — a strip laid
+   * down the middle of the lot satisfies the first and makes the second
+   * impossible, which collapses the building and leaves nothing to assert on.
+   */
   it("should snap a casino's facing toward the strip when within the snap distance", () => {
-    const ring = rectRing(0, 0, 100, 100);
+    const ring = rectRing(0, 0, 100, 20);
     const context = buildContext();
     const blocks = [rawBlock(0, "casino")];
     const lotLayer = {
@@ -411,8 +420,8 @@ describe("buildingsStage", () => {
       edges: [stripRoadEdge(0, 0), stripRoadEdge(1, 1), stripRoadEdge(2, 2)],
       polylines: polylinePool([
         [
-          { x: -1000, y: 50 },
-          { x: 1000, y: 50 },
+          { x: -1000, y: 45 },
+          { x: 1000, y: 45 },
         ],
         [{ x: 9999, y: 9999 }],
         [
@@ -447,5 +456,221 @@ describe("buildingsStage", () => {
       constantStream(0.5)
     );
     expect(result.buildings.length).toBe(3);
+  });
+});
+
+/**
+ * The box a building is massed inside. Its angle is what decides whether a
+ * facade ends up parallel to the street or at an arbitrary angle to it.
+ */
+describe("obbAlignedTo", () => {
+  const square: readonly Vec2[] = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 4 },
+    { x: 0, y: 4 },
+  ];
+
+  it("should take the given axis as its facing when aligning to an axis", () => {
+    const axis = { x: 0, y: 1 };
+    expect(obbAlignedTo(square, axis).facing).toEqual(axis);
+  });
+
+  it("should measure width along the axis when the axis is the long side", () => {
+    const result = obbAlignedTo(square, { x: 1, y: 0 });
+    expect([result.w, result.d]).toEqual([10, 4]);
+  });
+
+  it("should swap the extents when the axis is the short side", () => {
+    const result = obbAlignedTo(square, { x: 0, y: 1 });
+    expect([result.w, result.d]).toEqual([4, 10]);
+  });
+
+  it("should centre the box on the points when aligning to an axis", () => {
+    const result = obbAlignedTo(square, { x: 1, y: 0 });
+    expect([result.cx, result.cy]).toEqual([5, 2]);
+  });
+
+  /** A 45-degree axis over a unit square: both extents become the diagonal. */
+  it("should span the diagonal when the axis runs corner to corner", () => {
+    const unit: readonly Vec2[] = [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 1 },
+      { x: 0, y: 1 },
+    ];
+    const d = Math.SQRT1_2;
+    const result = obbAlignedTo(unit, { x: d, y: d });
+    expect(result.w).toBeCloseTo(Math.SQRT2, 6);
+  });
+});
+
+/**
+ * The geometry that decides where a footprint may sit. These branches were
+ * unreachable from the fixtures above — every lot there is a large rectangle
+ * with no road near it, so the fit always succeeded on its first try and the
+ * shrink was never entered.
+ */
+const footprintArea = (o: { readonly w: number; readonly d: number }): number =>
+  o.w * o.d;
+
+describe("buildingsStage footprint fitting", () => {
+  /**
+   * The regression this was written for. An avenue laid straight through the
+   * middle of the lot puts the footprint's own centre inside a carriageway,
+   * and every concentric shrink shares that centre, so the fit collapses to
+   * zero at any scale. The lot used to then vanish from `buildings` *and* from
+   * `plazaLotIds`, contradicting this stage's contract that a vetoed lot is
+   * always named. A hole is the one outcome that is not allowed.
+   */
+  it("should still name the lot as a plaza when its footprint collapses", () => {
+    const ring = rectRing(0, 0, 100, 100);
+    const context = buildContext();
+    const blocks = [rawBlock(0, "suburb")];
+    const lotLayer = {
+      lots: [rawLot(0, 0)],
+      polygons: buildPolygonPool([ring]),
+    };
+    // A highway: 30 m of carriageway, so its 15 m half-width swallows the
+    // footprint's centre wherever the massing puts it along the lot.
+    const throughTheMiddle: RoadGraph = {
+      nodes: [],
+      edges: [
+        {
+          id: 0,
+          a: -1,
+          b: -1,
+          cls: "highway",
+          crossing: "none",
+          polylineIndex: 0,
+          strip: false,
+        },
+      ],
+      polylines: polylinePool([
+        [
+          { x: -50, y: 50 },
+          { x: 150, y: 50 },
+        ],
+      ]),
+    };
+    const result = buildingsStage(
+      { context, blocks, lotLayer, roads: throughTheMiddle },
+      constantStream(0.5)
+    );
+    const named =
+      result.buildings.some((b) => b.lotId === 0) ||
+      result.plazaLotIds.includes(0);
+    expect(named).toBe(true);
+  });
+
+  /**
+   * A road crossing the lot's interior bounds nothing — no block boundary
+   * corresponds to it — so the block inset never accounted for it. The
+   * footprint has to give way to it here or it stands in the carriageway.
+   */
+  it("should shrink the footprint when a road crosses the lot interior", () => {
+    const ring = rectRing(0, 0, 100, 100);
+    const context = buildContext();
+    const blocks = [rawBlock(0, "suburb")];
+    const lotLayer = {
+      lots: [rawLot(0, 0)],
+      polygons: buildPolygonPool([ring]),
+    };
+    const clear = buildingsStage(
+      { context, blocks, lotLayer, roads: EMPTY_ROADS },
+      constantStream(0.5)
+    );
+    // An avenue along the lot's own edge, offset enough that its carriageway
+    // eats into the plot without swallowing the centre.
+    const crossed: RoadGraph = {
+      nodes: [],
+      edges: [stripRoadEdge(0, 0)],
+      polylines: polylinePool([
+        [
+          { x: -50, y: 20 },
+          { x: 150, y: 20 },
+        ],
+      ]),
+    };
+    const withRoad = buildingsStage(
+      { context, blocks, lotLayer, roads: crossed },
+      constantStream(0.5)
+    );
+    expect(footprintArea(withRoad.buildings[0].obb)).toBeLessThan(
+      footprintArea(clear.buildings[0].obb)
+    );
+  });
+
+  it("should square the footprint to the street when the lot fronts one", () => {
+    const ring = rectRing(0, 0, 100, 60);
+    const context = buildContext();
+    const blocks = [rawBlock(0, "suburb")];
+    // The ring's own long axis is +x; the frontage points the other way, so a
+    // result matching it can only have come from `frontageDir`.
+    const frontageDir = { x: 0, y: 1 };
+    const lotLayer = {
+      lots: [{ ...rawLot(0, 0), frontageDir }],
+      polygons: buildPolygonPool([ring]),
+    };
+    const result = buildingsStage(
+      { context, blocks, lotLayer, roads: EMPTY_ROADS },
+      constantStream(0.5)
+    );
+    expect(result.buildings[0].obb.facing).toEqual(frontageDir);
+  });
+});
+
+/**
+ * The corner-only clearance test's blind spot, pinned.
+ *
+ * A corridor running lengthwise down the middle of a footprint is at its
+ * furthest from all four corners, so a corner test passes at full scale and
+ * the shrink never runs — the road goes through the building end to end. The
+ * perpendicular case above does not catch this: there, shrinking eventually
+ * pulls the corners back into the corridor, so the fit bottoms out correctly.
+ */
+describe("buildingsStage clearance along the footprint's own axis", () => {
+  it("should shrink the footprint when a road runs lengthwise through it", () => {
+    const ring = rectRing(0, 0, 100, 100);
+    const context = buildContext();
+    const blocks = [rawBlock(0, "suburb")];
+    const lotLayer = {
+      lots: [rawLot(0, 0)],
+      polygons: buildPolygonPool([ring]),
+    };
+    const clear = buildingsStage(
+      { context, blocks, lotLayer, roads: EMPTY_ROADS },
+      constantStream(0.5)
+    );
+    const alongTheAxis: RoadGraph = {
+      nodes: [],
+      edges: [
+        {
+          id: 0,
+          a: -1,
+          b: -1,
+          cls: "alley",
+          crossing: "none",
+          polylineIndex: 0,
+          strip: false,
+        },
+      ],
+      polylines: polylinePool([
+        [
+          { x: -50, y: 50 },
+          { x: 150, y: 50 },
+        ],
+      ]),
+    };
+    const withRoad = buildingsStage(
+      { context, blocks, lotLayer, roads: alongTheAxis },
+      constantStream(0.5)
+    );
+    // Absent counts as zero: an alley down the centre line leaves no scale at
+    // which the box clears it, so the honest result here is no building at all
+    // rather than a smaller one.
+    const builtArea = (result: typeof clear): number =>
+      result.buildings.reduce((sum, b) => sum + footprintArea(b.obb), 0);
+    expect(builtArea(withRoad)).toBeLessThan(builtArea(clear));
   });
 });

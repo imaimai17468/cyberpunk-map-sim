@@ -164,6 +164,14 @@ export interface Lot {
   readonly blockId: number;
   readonly ringIndex: number;
   readonly frontage: Frontage;
+  /**
+   * Unit direction of the street this lot fronts, or null when it fronts none.
+   *
+   * Carried on the lot rather than recomputed downstream because it is the
+   * subdivision that knows which of the block's boundary edges were roads; by
+   * the time a building is massed, that provenance is gone.
+   */
+  readonly frontageDir: Vec2 | null;
 }
 
 export const BUILDING_ARCHETYPES = [

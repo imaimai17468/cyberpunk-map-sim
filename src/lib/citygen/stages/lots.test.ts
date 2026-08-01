@@ -1,4 +1,5 @@
 import type {
+  RoadGraph,
   Block,
   BoundaryRef,
   DistrictKind,
@@ -10,11 +11,14 @@ import type { Grid } from "./types";
 import { LOTS, LOT_TARGET_AREA_M2 } from "../constants";
 import type { RngStream } from "../rng/types";
 import {
+  buildableRingOf,
   classifyFrontages,
   computeAreaScale,
   lotsStage,
   subdivideBlock,
 } from "./lots";
+import { area as polygonArea, isSelfIntersecting } from "../geometry/polygon";
+import { ROAD_WIDTH_M } from "../constants";
 
 const rectRing = (
   x0: number,
@@ -201,6 +205,17 @@ describe("classifyFrontages", () => {
   });
 });
 
+/**
+ * No arterials: every block boundary in these fixtures is a `cut`, which the
+ * stage prices as a street. That is what these cases were written against —
+ * the point under test is subdivision, not which road bounds which edge.
+ */
+const EMPTY_ROADS: RoadGraph = {
+  nodes: [],
+  edges: [],
+  polylines: { starts: Uint32Array.from([0]), coords: Float32Array.from([]) },
+};
+
 const rawBlock = (
   overrides: Partial<Block> & {
     readonly id: number;
@@ -220,7 +235,12 @@ describe("lotsStage", () => {
     const ring = rectRing(0, 0, 300, 300);
     const blocks = [rawBlock({ id: 0, ringIndex: 0, district: "megablock" })];
     const result = lotsStage(
-      { blocks, blockPolygons: buildPolygonPool([ring]), grid: TEST_GRID },
+      {
+        blocks,
+        blockPolygons: buildPolygonPool([ring]),
+        grid: TEST_GRID,
+        roads: EMPTY_ROADS,
+      },
       poisonStream()
     );
     expect(result.lots.length).toBe(1);
@@ -238,6 +258,7 @@ describe("lotsStage", () => {
         blocks,
         blockPolygons: buildPolygonPool([waterRing, suburbRing]),
         grid: TEST_GRID,
+        roads: EMPTY_ROADS,
       },
       constantStream(0.5)
     );
@@ -250,7 +271,12 @@ describe("lotsStage", () => {
     const ring = rectRing(0, 0, targetArea, 1);
     const blocks = [rawBlock({ id: 0, ringIndex: 0, district })];
     const result = lotsStage(
-      { blocks, blockPolygons: buildPolygonPool([ring]), grid: TEST_GRID },
+      {
+        blocks,
+        blockPolygons: buildPolygonPool([ring]),
+        grid: TEST_GRID,
+        roads: EMPTY_ROADS,
+      },
       constantStream(0.5)
     );
     expect(result.lots.length).toBeGreaterThan(1);
@@ -268,7 +294,12 @@ describe("lotsStage", () => {
       }),
     ];
     const result = lotsStage(
-      { blocks, blockPolygons: buildPolygonPool([blockRing]), grid: TEST_GRID },
+      {
+        blocks,
+        blockPolygons: buildPolygonPool([blockRing]),
+        grid: TEST_GRID,
+        roads: EMPTY_ROADS,
+      },
       constantStream(0.5)
     );
     expect(result.lots.some((lot) => lot.frontage === "landlocked")).toBe(true);
@@ -278,9 +309,164 @@ describe("lotsStage", () => {
     const ring = rectRing(0, 0, 300, 300);
     const blocks = [rawBlock({ id: 0, ringIndex: 0, district: "megablock" })];
     const result = lotsStage(
-      { blocks, blockPolygons: buildPolygonPool([ring]), grid: TEST_GRID },
+      {
+        blocks,
+        blockPolygons: buildPolygonPool([ring]),
+        grid: TEST_GRID,
+        roads: EMPTY_ROADS,
+      },
       poisonStream()
     );
     expect(result.polygons.starts.length).toBe(result.lots.length + 1);
+  });
+});
+
+/**
+ * The carriageway comes off the block before any lot is cut, so these cover the
+ * geometry that decides how far a building can ever be from a road.
+ */
+const boundaryOf = (
+  kinds: readonly BoundaryRef["kind"][]
+): readonly BoundaryRef[] => kinds.map((kind) => ({ kind, refId: 0 }));
+
+describe("buildableRingOf", () => {
+  it("should take half a street off every side when every edge is a cut", () => {
+    const ring = rectRing(0, 0, 200, 200);
+    const inset = buildableRingOf(
+      ring,
+      boundaryOf(["cut", "cut", "cut", "cut"]),
+      EMPTY_ROADS
+    );
+    const side = 200 - ROAD_WIDTH_M.street;
+    expect(polygonArea(inset ?? [])).toBeCloseTo(side * side, 3);
+  });
+
+  it("should take nothing off an edge when that edge is the map border", () => {
+    const ring = rectRing(0, 0, 200, 200);
+    const inset = buildableRingOf(
+      ring,
+      boundaryOf(["border", "border", "border", "border"]),
+      EMPTY_ROADS
+    );
+    expect(polygonArea(inset ?? [])).toBeCloseTo(200 * 200, 3);
+  });
+
+  it("should take half a highway off an edge when a highway bounds it", () => {
+    const ring = rectRing(0, 0, 200, 200);
+    const roads: RoadGraph = {
+      nodes: [],
+      edges: [
+        {
+          id: 7,
+          a: 0,
+          b: 1,
+          cls: "highway",
+          crossing: "none",
+          polylineIndex: 0,
+          strip: false,
+        },
+      ],
+      polylines: {
+        starts: Uint32Array.from([0]),
+        coords: Float32Array.from([]),
+      },
+    };
+    const boundary: readonly BoundaryRef[] = [
+      { kind: "arterial", refId: 7 },
+      { kind: "border", refId: 0 },
+      { kind: "border", refId: 0 },
+      { kind: "border", refId: 0 },
+    ];
+    const inset = buildableRingOf(ring, boundary, roads);
+    // One side loses half a highway; the other three are untouched border.
+    expect(polygonArea(inset ?? [])).toBeCloseTo(
+      200 * (200 - ROAD_WIDTH_M.highway / 2),
+      3
+    );
+  });
+
+  it("should yield nothing when the roads consume the whole block", () => {
+    const ring = rectRing(0, 0, 8, 8);
+    expect(
+      buildableRingOf(
+        ring,
+        boundaryOf(["cut", "cut", "cut", "cut"]),
+        EMPTY_ROADS
+      )
+    ).toBeNull();
+  });
+});
+
+describe("lotsStage frontage direction", () => {
+  /**
+   * The direction a building squares up to. Nothing asserted what `lotsStage`
+   * actually writes here until this existed — the value was produced, carried
+   * on the `Lot`, and never checked.
+   */
+  it("should record the bounding street's direction when a lot fronts one", () => {
+    // Wide and shallow, so a single un-split lot keeps the whole ring and its
+    // longest cut-provenance edge is the horizontal one.
+    const ring = rectRing(0, 0, 400, 60);
+    const blocks = [
+      rawBlock({
+        id: 0,
+        ringIndex: 0,
+        district: "megablock",
+        boundary: boundaryOf(["cut", "border", "border", "border"]),
+      }),
+    ];
+    const result = lotsStage(
+      {
+        blocks,
+        blockPolygons: buildPolygonPool([ring]),
+        grid: TEST_GRID,
+        roads: EMPTY_ROADS,
+      },
+      poisonStream()
+    );
+    expect(result.lots[0].frontageDir).toEqual({ x: 1, y: 0 });
+  });
+
+  it("should record no direction when the lot fronts no street", () => {
+    const ring = rectRing(0, 0, 400, 60);
+    const blocks = [rawBlock({ id: 0, ringIndex: 0, district: "megablock" })];
+    const result = lotsStage(
+      {
+        blocks,
+        blockPolygons: buildPolygonPool([ring]),
+        grid: TEST_GRID,
+        roads: EMPTY_ROADS,
+      },
+      poisonStream()
+    );
+    expect(result.lots[0].frontageDir).toBeNull();
+  });
+});
+
+describe("isSelfIntersecting", () => {
+  it("should report false when the ring is a simple rectangle", () => {
+    expect(isSelfIntersecting(rectRing(0, 0, 10, 10))).toBe(false);
+  });
+
+  it("should report true when two non-adjacent edges cross", () => {
+    // A bow tie: the classic folded quad.
+    expect(
+      isSelfIntersecting([
+        { x: 0, y: 0 },
+        { x: 10, y: 10 },
+        { x: 10, y: 0 },
+        { x: 0, y: 10 },
+      ])
+    ).toBe(true);
+  });
+
+  it("should report false when the ring has fewer than four vertices", () => {
+    expect(
+      isSelfIntersecting([
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+      ])
+    ).toBe(false);
   });
 });

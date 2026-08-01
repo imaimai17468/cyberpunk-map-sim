@@ -218,6 +218,7 @@ describe("count-control clamp saturation", () => {
           blocks: generated.blocks,
           blockPolygons: generated.blockPolygons,
           grid: gridOf(generated.params),
+          roads: generated.roads,
         }),
         (sizeM * sizeM) / 1_000_000
       );

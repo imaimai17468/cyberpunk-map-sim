@@ -10,17 +10,21 @@ import type {
   RoadGraph,
   Vec2,
 } from "@/entities/city";
-import { BUILDINGS } from "../constants";
+import { BUILDINGS, ROAD_WIDTH_M } from "../constants";
 import { bilinearSample } from "../field/field2d";
 import { minimumAreaObb } from "../geometry/hull";
+import { containsPoint } from "../geometry/polygon";
 import { centroid, samplePolygonInteriorPoints } from "../geometry/polygon";
+import { segmentIntersection } from "../geometry/intersect";
 import {
+  add,
   dot,
   length,
   lengthSq,
   normalize,
   perp,
   randomUnitVector,
+  scale,
   sub,
 } from "../geometry/vec";
 import type { RngStream } from "../rng/types";
@@ -58,6 +62,249 @@ const ringFromPool = (
 };
 
 const NEAR_ZERO = 1e-9;
+
+/** The widest half-carriageway, used to bound the corridor search radius. */
+const MAX_ROAD_HALF_WIDTH_M = Math.max(...Object.values(ROAD_WIDTH_M)) / 2;
+
+/** The four corners of an OBB, in ring order. */
+const obbCorners = (o: Obb): readonly Vec2[] => {
+  const along = scale(o.facing, o.w / 2);
+  const across = scale(perp(o.facing), o.d / 2);
+  return [
+    add(add({ x: o.cx, y: o.cy }, along), across),
+    add(sub({ x: o.cx, y: o.cy }, along), across),
+    sub(sub({ x: o.cx, y: o.cy }, along), across),
+    sub(add({ x: o.cx, y: o.cy }, along), across),
+  ];
+};
+
+/**
+ * The tightest box around `points` whose long axis is `axis`.
+ *
+ * Unlike `minimumAreaObb` the angle is given rather than searched for, which is
+ * what lets a building square up to the street it fronts instead of to whatever
+ * angle its lot's subdivision happened to leave behind.
+ */
+export const obbAlignedTo = (points: readonly Vec2[], axis: Vec2): Obb => {
+  const across = perp(axis);
+  const us = points.map((p) => dot(p, axis));
+  const vs = points.map((p) => dot(p, across));
+  const uMid = (Math.min(...us) + Math.max(...us)) / 2;
+  const vMid = (Math.min(...vs) + Math.max(...vs)) / 2;
+  const centre = add(scale(axis, uMid), scale(across, vMid));
+  return {
+    cx: centre.x,
+    cy: centre.y,
+    facing: axis,
+    w: Math.max(...us) - Math.min(...us),
+    d: Math.max(...vs) - Math.min(...vs),
+  };
+};
+
+/** True when every corner and every edge of `obb` lies within `ring`. */
+const obbWithin = (obb: Obb, ring: readonly Vec2[]): boolean => {
+  const corners = obbCorners(obb);
+  if (!corners.every((c) => containsPoint(ring, c))) return false;
+  // Corners alone would pass a box that bridges a concave notch, so the edges
+  // are checked against the ring's as well.
+  const n = ring.length;
+  return corners.every((c, i) => {
+    const next = corners[(i + 1) % corners.length];
+    return ring.every((p, j) => {
+      const q = ring[(j + 1) % n];
+      return segmentIntersection(c, next, p, q).kind === "none";
+    });
+  });
+};
+
+/** Shrinks `obb` about its own centre by `factor`, keeping its angle. */
+const scaleObb = (obb: Obb, factor: number): Obb => ({
+  ...obb,
+  w: obb.w * factor,
+  d: obb.d * factor,
+});
+
+/** Squared distance from `p` to segment `a..b`. */
+const distanceSqToSegment = (p: Vec2, a: Vec2, b: Vec2): number => {
+  const ab = sub(b, a);
+  const lenSq = lengthSq(ab);
+  const t =
+    lenSq < NEAR_ZERO
+      ? 0
+      : Math.min(1, Math.max(0, dot(sub(p, a), ab) / lenSq));
+  return lengthSq(sub(p, add(a, scale(ab, t))));
+};
+
+/** A road centreline segment with the clearance its class demands. */
+interface RoadCorridor {
+  readonly a: Vec2;
+  readonly b: Vec2;
+  readonly halfWidthSq: number;
+}
+
+/** Squared distance between two segments. Zero when they cross. */
+const segmentDistanceSq = (a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2): number =>
+  segmentIntersection(a1, a2, b1, b2).kind === "none"
+    ? Math.min(
+        distanceSqToSegment(a1, b1, b2),
+        distanceSqToSegment(a2, b1, b2),
+        distanceSqToSegment(b1, a1, a2),
+        distanceSqToSegment(b2, a1, a2)
+      )
+    : 0;
+
+/**
+ * True when `obb` keeps every corridor's full clearance.
+ *
+ * The block inset already keeps a building off the roads that bound its own
+ * block, but not off one that merely passes nearby: an arterial that dead-ends
+ * inside a face is never a boundary of it, so no inset is taken for it and the
+ * lots run straight over the road.
+ *
+ * Measuring the corners alone is not enough, and the way it fails is not
+ * marginal. A corridor running lengthwise through the middle of a footprint,
+ * parallel to one of its own axes, is at its *furthest* from all four corners —
+ * an alley down the centre of a 59 m box leaves every corner ~29 m away, so a
+ * corner test passes on the first try and the shrink is never even entered
+ * while the road runs through the building end to end. So the box is compared
+ * to the corridor as two segments, and the endpoints are checked for
+ * containment as well, because a corridor lying wholly inside the footprint
+ * crosses none of its edges.
+ */
+const clearOfRoads = (
+  obb: Obb,
+  corridors: readonly RoadCorridor[]
+): boolean => {
+  const corners = obbCorners(obb);
+  const centre = { x: obb.cx, y: obb.cy };
+  // Nothing outside this radius can touch the box, whatever its angle.
+  const halfDiagonal = length({ x: obb.w, y: obb.d }) / 2;
+  return corridors.every((r) => {
+    // One point-to-segment distance rejects most corridors in the bucket
+    // before the twenty-odd segment operations below. Without it a 4 km map
+    // spends nine seconds here, over the per-test budget.
+    const reach = halfDiagonal + Math.sqrt(r.halfWidthSq);
+    if (distanceSqToSegment(centre, r.a, r.b) > reach * reach) return true;
+    if (containsPoint(corners, r.a) || containsPoint(corners, r.b))
+      return false;
+    return corners.every((c, i) => {
+      const next = corners[(i + 1) % corners.length];
+      return segmentDistanceSq(c, next, r.a, r.b) >= r.halfWidthSq;
+    });
+  });
+};
+
+/** Side of one corridor-index bucket, in metres. */
+const CORRIDOR_CELL_M = 64;
+
+interface CorridorIndex {
+  readonly buckets: ReadonlyMap<string, readonly RoadCorridor[]>;
+}
+
+const bucketKey = (cx: number, cy: number): string => `${cx},${cy}`;
+
+/**
+ * Road corridors bucketed on a fixed grid.
+ *
+ * Once the subdivision cuts became streets the graph went from a couple of
+ * hundred arterials to several thousand edges, and testing every footprint
+ * against every one of them made a single generation take longer than the whole
+ * test suite used to. Each corridor is filed under every cell its extent
+ * touches, so a lookup reads a handful of cells instead of the whole network.
+ */
+const buildCorridorIndex = (roads: RoadGraph): CorridorIndex => {
+  const buckets = new Map<string, RoadCorridor[]>();
+  roads.edges.forEach((edge) => {
+    const halfWidth = ROAD_WIDTH_M[edge.cls] / 2;
+    polylineSegments(roads, edge.polylineIndex).forEach(([a, b]) => {
+      const corridor = { a, b, halfWidthSq: halfWidth * halfWidth };
+      const x0 = Math.floor((Math.min(a.x, b.x) - halfWidth) / CORRIDOR_CELL_M);
+      const x1 = Math.floor((Math.max(a.x, b.x) + halfWidth) / CORRIDOR_CELL_M);
+      const y0 = Math.floor((Math.min(a.y, b.y) - halfWidth) / CORRIDOR_CELL_M);
+      const y1 = Math.floor((Math.max(a.y, b.y) + halfWidth) / CORRIDOR_CELL_M);
+      Array.from({ length: x1 - x0 + 1 }).forEach((_unusedX, i) =>
+        Array.from({ length: y1 - y0 + 1 }).forEach((_unusedY, j) => {
+          const key = bucketKey(x0 + i, y0 + j);
+          const existing = buckets.get(key);
+          if (existing === undefined) buckets.set(key, [corridor]);
+          else existing.push(corridor);
+        })
+      );
+    });
+  });
+  return { buckets };
+};
+
+/**
+ * Corridors that could come within `reach` of `centre`.
+ *
+ * A superset, not an exact answer: everything filed in the covered cells is
+ * returned, and the caller's own distance test rejects the rest. The result may
+ * repeat a corridor filed under two cells, which costs a duplicated comparison
+ * and changes no outcome.
+ */
+const lookupCorridors = (
+  index: CorridorIndex,
+  centre: Vec2,
+  reach: number
+): readonly RoadCorridor[] => {
+  const x0 = Math.floor((centre.x - reach) / CORRIDOR_CELL_M);
+  const x1 = Math.floor((centre.x + reach) / CORRIDOR_CELL_M);
+  const y0 = Math.floor((centre.y - reach) / CORRIDOR_CELL_M);
+  const y1 = Math.floor((centre.y + reach) / CORRIDOR_CELL_M);
+  return Array.from({ length: x1 - x0 + 1 }).flatMap((_unusedX, i) =>
+    Array.from({ length: y1 - y0 + 1 }).flatMap(
+      (_unusedY, j) => index.buckets.get(bucketKey(x0 + i, y0 + j)) ?? []
+    )
+  );
+};
+
+/** Whether a fitted footprint still has enough area to be worth building. */
+const hasBuildableFootprint = (entry: {
+  readonly massing: { readonly footprint: Obb };
+}): boolean =>
+  entry.massing.footprint.w * entry.massing.footprint.d >=
+  BUILDINGS.minFootprintM2;
+
+const FIT_STEPS = 10;
+
+/**
+ * The largest concentric shrink of `obb` that fits inside `ring`.
+ *
+ * A lot's box is a *bounding* box, so on any lot that is not a rectangle it
+ * sticks out past the plot — and since lots tile their block, what it sticks
+ * out into is the neighbour. Thousands of pairs of buildings on different lots
+ * interpenetrated before this, corporate towers among them. Keeping each
+ * footprint inside its own lot is what makes that impossible rather than
+ * unlikely, because the lots themselves do not overlap.
+ *
+ * Bisection rather than an exact inscribed-rectangle solve: ten steps land
+ * within a thousandth of the largest fitting scale, and the common case (a
+ * rectangular lot, already inside) exits on the first test.
+ *
+ * Every candidate shares the original box's centre, so if that centre is not
+ * itself valid then no scale is, and the search correctly bottoms out at zero.
+ * That is what makes returning the untested `lo = 0` safe rather than lucky —
+ * and the caller has to notice it, because a lot that collapses this way is a
+ * lot with no building on it.
+ */
+const fitWithin = (
+  obb: Obb,
+  ring: readonly Vec2[],
+  corridors: readonly RoadCorridor[]
+): Obb => {
+  const fits = (candidate: Obb): boolean =>
+    obbWithin(candidate, ring) && clearOfRoads(candidate, corridors);
+  if (fits(obb)) return obb;
+  const search = (lo: number, hi: number, steps: number): number => {
+    if (steps === 0) return lo;
+    const mid = (lo + hi) / 2;
+    return fits(scaleObb(obb, mid))
+      ? search(mid, hi, steps - 1)
+      : search(lo, mid, steps - 1);
+  };
+  return scaleObb(obb, search(0, 1, FIT_STEPS));
+};
 
 const distanceToSegment = (p: Vec2, a: Vec2, b: Vec2): number => {
   const ab = sub(b, a);
@@ -399,7 +646,15 @@ export const buildingsStage = (
 
   const results: readonly LotResult[] = lotLayer.lots.map((lot) => {
     const ring = ringFromPool(lotLayer.polygons, lot.ringIndex);
-    const lotObb = minimumAreaObb(ring);
+    // Square to the street where the lot fronts one. `minimumAreaObb` takes
+    // whatever angle the subdivision happened to leave, which is *usually*
+    // near the street because both the block and the lot were cut along their
+    // own boxes — but not for a slum, whose cut directions are deliberately
+    // jittered, and not for a lot whose ring came out concave.
+    const lotObb =
+      lot.frontageDir === null
+        ? minimumAreaObb(ring)
+        : obbAlignedTo(ring, lot.frontageDir);
     if (lotObb.w * lotObb.d < BUILDINGS.minFootprintM2) {
       return { kind: "plaza", lotId: lot.id };
     }
@@ -444,15 +699,59 @@ export const buildingsStage = (
   const plazaLotIds = results
     .filter(isPlazaResult)
     .map((result) => result.lotId);
+  // Every footprint is confined to its own lot here rather than inside each
+  // archetype's massing. The massing rules are about proportion — coverage,
+  // setback, tiering — and each would otherwise have to re-derive containment
+  // for itself; doing it once at the boundary means no archetype can forget.
+  // Lots tile their block without overlapping, so this is also what makes two
+  // buildings on different lots unable to intersect. Two on the *same* lot
+  // still can, which is how a slum shack keeps its lean-to.
+  const lotRingOf = (lotId: number): readonly Vec2[] =>
+    ringFromPool(lotLayer.polygons, lotLayer.lots[lotId].ringIndex);
+
+  const corridorIndex = buildCorridorIndex(roads);
+  const corridorsNear = (
+    centre: Vec2,
+    reach: number
+  ): readonly RoadCorridor[] => lookupCorridors(corridorIndex, centre, reach);
   const flatBuildings = results.filter(isBuildingsResult).flatMap((result) =>
     result.massing.map((massing) => ({
       archetype: result.archetype,
       lotId: result.lotId,
       blockId: result.blockId,
-      massing,
+      massing: {
+        ...massing,
+        footprint: fitWithin(
+          massing.footprint,
+          lotRingOf(result.lotId),
+          // Reach covers the footprint's own half-diagonal plus the widest
+          // carriageway, so no corridor that could touch it is filtered out.
+          corridorsNear(
+            { x: massing.footprint.cx, y: massing.footprint.cy },
+            length({ x: massing.footprint.w, y: massing.footprint.d }) / 2 +
+              MAX_ROAD_HALF_WIDTH_M
+          )
+        ),
+      },
     }))
   );
-  const buildings: readonly Building[] = flatBuildings.map((entry, i) => ({
+  // A footprint whose own centre lies in a carriageway, or outside its own
+  // ring, cannot be shrunk into a valid position at any scale — every smaller
+  // box shares that centre — so the fit collapses it to nothing. Dropping the
+  // zero-sized box is right, but dropping it *silently* was not: the lot then
+  // appeared in neither `buildings` nor `plazaLotIds`, and this stage's own
+  // contract is that `plazaLotIds` names every vetoed lot and never leaves a
+  // hole. A concave lot large enough to build on hit exactly that.
+  const builtBuildings = flatBuildings.filter(hasBuildableFootprint);
+  const builtLotIds = new Set(builtBuildings.map((entry) => entry.lotId));
+  const collapsedLotIds = [
+    ...new Set(
+      flatBuildings
+        .filter((entry) => !builtLotIds.has(entry.lotId))
+        .map((entry) => entry.lotId)
+    ),
+  ];
+  const buildings: readonly Building[] = builtBuildings.map((entry, i) => ({
     id: i,
     archetype: entry.archetype,
     obb: entry.massing.footprint,
@@ -463,5 +762,8 @@ export const buildingsStage = (
     blockId: entry.blockId,
   }));
 
-  return { buildings, plazaLotIds };
+  return {
+    buildings,
+    plazaLotIds: [...plazaLotIds, ...collapsedLotIds],
+  };
 };

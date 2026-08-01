@@ -2,6 +2,7 @@ import type {
   BoundaryRef,
   Field2D,
   PolygonPool,
+  RoadEdge,
   RoadGraph,
   TerrainLayer,
   Vec2,
@@ -406,6 +407,62 @@ const adjacencyOf = (
   });
 };
 
+/** Centimetre-rounded coordinate, so two copies of a shared cut key alike. */
+const keyCoord = (v: number): string => (Math.round(v * 100) / 100).toFixed(2);
+
+/** Rounded, order-independent key for one undirected segment. */
+const segmentKey = (a: Vec2, b: Vec2): string => {
+  const one = `${keyCoord(a.x)},${keyCoord(a.y)}`;
+  const two = `${keyCoord(b.x)},${keyCoord(b.y)}`;
+  return one < two ? `${one}|${two}` : `${two}|${one}`;
+};
+
+/**
+ * The subdivision cuts, as street edges of the road graph.
+ *
+ * Until this existed the only roads in the model were the ~250 arterials, and
+ * the street network that the block subdivision creates lived nowhere but the
+ * block outlines — so nothing drew it, nothing could measure a building against
+ * the street it fronts, and `ROAD_CLASSES` carried two members (`street`,
+ * `alley`) that no edge was ever assigned.
+ *
+ * Each cut is shared by the two blocks either side of it, so the segments are
+ * deduplicated by their endpoints. Node ids are -1, which is the contract's
+ * value for an edge that is not between two arterial nodes.
+ */
+const streetEdgesOf = (
+  leaves: readonly Leaf[],
+  edgeIdBase: number,
+  polylineIndexBase: number
+): {
+  readonly edges: readonly RoadEdge[];
+  readonly coords: readonly number[];
+} => {
+  const seen = new Set<string>();
+  const segments = leaves.flatMap((leaf) =>
+    leaf.ring.flatMap((point, i) => {
+      if (leaf.edgeRefs[i].kind !== "cut") return [];
+      const next = leaf.ring[(i + 1) % leaf.ring.length];
+      const key = segmentKey(point, next);
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [[point, next] as const];
+    })
+  );
+  return {
+    edges: segments.map((_segment, i) => ({
+      id: edgeIdBase + i,
+      a: -1,
+      b: -1,
+      cls: "street" as const,
+      crossing: "none" as const,
+      polylineIndex: polylineIndexBase + i,
+      strip: false,
+    })),
+    coords: segments.flatMap(([a, b]) => [a.x, a.y, b.x, b.y]),
+  };
+};
+
 export const blocksStage = (
   input: BlocksInput,
   stream: RngStream
@@ -452,12 +509,32 @@ export const blocksStage = (
     water: isWaterBlock(leaf.ring, input),
   }));
 
+  // The arterials pass through untouched; the cuts are appended as streets, so
+  // the road graph is the whole network rather than just its skeleton.
+  const arterialPool = input.roads.polylines;
+  const streets = streetEdgesOf(
+    leaves,
+    input.roads.edges.reduce((max, e) => Math.max(max, e.id), -1) + 1,
+    arterialPool.starts.length - 1
+  );
+  const streetStarts = streets.edges.map(
+    (_edge, i) => arterialPool.coords.length / 2 + i * 2
+  );
+
   return {
     blocks,
     polygons: poolOf(leaves.map((leaf) => leaf.ring)),
-    // Cut segments live in the block rings; the arterial graph passes through
-    // unchanged, and the renderer draws block outlines from the polygon pool.
-    roads: input.roads,
+    roads: {
+      nodes: input.roads.nodes,
+      edges: [...input.roads.edges, ...streets.edges],
+      polylines: {
+        coords: Float32Array.from([...arterialPool.coords, ...streets.coords]),
+        starts: Uint32Array.from([
+          ...arterialPool.starts,
+          ...streetStarts.map((s) => s + 2),
+        ]),
+      },
+    },
   };
 };
 

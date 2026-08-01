@@ -14,19 +14,10 @@ clone した直後に置き換えるべき値と、残す/捨てるファイル�
 | `README.md` の見出しと説明 | テンプレートの説明 | プロジェクトの説明 |
 
 `wrangler.toml` の `name` はデプロイ先の Worker を決めるので、既存の Worker と
-衝突しない名前にする。
-
-## 2. Cloudflare リソースを差し替える
-
-`wrangler.toml` は初期状態でローカル開発用のダミー値（`local-db` /
-`local-avatars` / ゼロ UUID）が入っており、`bun run dev` はそのまま動く。
-本番にデプロイする段で実リソースへ差し替える。手順は
-[DATABASE_SETUP.md](./DATABASE_SETUP.md)、デプロイ後の運用は
+衝突しない名前にする。デプロイ・ロールバック・シークレット運用は
 [DEPLOYMENT.md](./DEPLOYMENT.md) を参照。
 
-`BETTER_AUTH_URL` はローカルが `http://localhost:5173`、本番は本番オリジン。
-
-## 3. 残すもの / 捨てるもの
+## 2. 残すもの / 捨てるもの
 
 このリポジトリはアプリ本体より**エージェント運用層のほうが大きい**。どちらの
 性質かで扱いを分ける。
@@ -72,14 +63,6 @@ npx -y @fuwasegu/aegis@<pinned> share-export
 状態を保つこと。ローカル DB がバンドルより古い場合の復旧順序は
 `.claude/hooks/session-start-aegis-hydrate.sh` が案内する（materialize を先に
 回すとバンドルのバージョンが退行するので順序を守る）。
-
-## 4. 削除するアプリ機能
-
-プロフィール機能（`src/components/features/profile-page/`,
-`src/server/fn/profile.ts`, `src/gateways/user/`, `src/entities/user/`,
-`src/routes/profile.tsx`, `src/lib/storage/`）は、認証・DB・R2 を通した参照実装
-であって要件ではない。不要なら削除する。認証自体を外す場合は
-`/remove-db` スキルの手順を確認する。
 
 新しい機能を追加するときのディレクトリ判断は ADR-0016
 と `.claude/rules/react.md` に従う。

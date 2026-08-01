@@ -8,9 +8,6 @@ TanStack Start + TypeScript + Tailwind CSS + shadcn/ui を使用したモダン�
 - **Language**: TypeScript 7 (native compiler)
 - **Styling**: Tailwind CSS v4
 - **UI Components**: shadcn/ui (Radix UI primitives)
-- **Authentication**: Better Auth (Google OAuth)
-- **Database**: Cloudflare D1 (SQLite) + Drizzle ORM
-- **Storage**: Cloudflare R2
 - **Hosting**: Cloudflare Workers (@cloudflare/vite-plugin)
 - **Code Quality**: oxlint (linting) + oxfmt (formatting)
 - **Testing**: Vitest + Testing Library
@@ -23,13 +20,12 @@ TanStack Start + TypeScript + Tailwind CSS + shadcn/ui を使用したモダン�
 git clone <your-repo-url>
 cd <your-repo-name>
 bun install
-cp .env.local.example .env.local
 bun run dev
 ```
 
-http://localhost:5173 でアクセス。`@cloudflare/vite-plugin` により、`bun run dev` でも Cloudflare D1 / R2 バインディングが有効です。
+http://localhost:5173 でアクセス。都市生成はすべてブラウザ内の Web Worker で走るため、バインディングもシークレットも不要です。
 
-データベース・認証・ストレージのセットアップ手順は [docs/DATABASE_SETUP.md](./docs/DATABASE_SETUP.md)、デプロイ・ロールバック・シークレット運用は [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)、このテンプレートを新規プロジェクトに使う手順は [docs/FORKING.md](./docs/FORKING.md) を参照。
+デプロイ・ロールバック・シークレット運用は [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)、このテンプレートを新規プロジェクトに使う手順は [docs/FORKING.md](./docs/FORKING.md) を参照。
 
 AI エージェント用の Aegis ナレッジベース（`.aegis/`、gitignore 済み）は、初回の Claude Code セッション開始時に SessionStart フックが `aegis-share/`（git 管理のバンドル）から自動構築します。手動で構築する場合: `npx -y @fuwasegu/aegis share-hydrate`
 
@@ -52,12 +48,6 @@ AI エージェント用の Aegis ナレッジベース（`.aegis/`、gitignore 
 | `bun run knip`            | Detect unused deps/exports/files                |
 | `bun run test`            | Run tests with Vitest                           |
 | `bun run cf-typegen`      | Generate `CloudflareEnv` from `wrangler.toml`   |
-| `bun run db:generate`     | Generate Drizzle migrations from the schema     |
-| `bun run db:push`         | Push the schema to the remote D1 database       |
-| `bun run db:push:local`   | Set up / migrate the local D1 database          |
-| `bun run db:seed:local`   | Seed the local D1 database with dev data        |
-| `bun run db:studio`       | Open Drizzle Studio                             |
-| `bun run db:pull`         | Introspect the remote D1 schema                 |
 
 ## Tools
 
@@ -116,9 +106,6 @@ src/
 │   ├── shared/             # Cross-page shared components
 │   └── features/           # Feature-specific components
 ├── lib/
-│   ├── auth/               # Better Auth 設定
-│   ├── drizzle/            # Drizzle ORM スキーマ
-│   ├── storage/            # R2 ストレージ
 │   └── utils.ts
 ├── router.tsx              # TanStack Router definition
 ├── client.tsx              # Browser entry (hydrateRoot)
@@ -150,9 +137,6 @@ bunx shadcn@latest add [component-name]
 - [TanStack Router](https://tanstack.com/router/)
 - [Tailwind CSS](https://tailwindcss.com/docs)
 - [shadcn/ui](https://ui.shadcn.com/)
-- [Better Auth](https://www.better-auth.com/)
-- [Cloudflare D1](https://developers.cloudflare.com/d1/)
-- [Cloudflare R2](https://developers.cloudflare.com/r2/)
 - [@cloudflare/vite-plugin](https://developers.cloudflare.com/workers/vite-plugin/)
 - [oxc (oxlint/oxfmt)](https://oxc.rs/)
 - [Vitest](https://vitest.dev/)

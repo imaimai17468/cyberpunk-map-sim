@@ -1,0 +1,254 @@
+import type {
+  Block,
+  BoundaryRef,
+  DistrictKind,
+  PolygonPool,
+  Vec2,
+} from "@/entities/city";
+import { describe, expect, it } from "vitest";
+import { LOTS, LOT_TARGET_AREA_M2 } from "../constants";
+import type { RngStream } from "../rng/types";
+import {
+  classifyFrontages,
+  computeAreaScale,
+  lotsStage,
+  subdivideBlock,
+} from "./lots";
+
+const rectRing = (
+  x0: number,
+  y0: number,
+  w: number,
+  h: number
+): readonly Vec2[] => [
+  { x: x0, y: y0 },
+  { x: x0 + w, y: y0 },
+  { x: x0 + w, y: y0 + h },
+  { x: x0, y: y0 + h },
+];
+
+const BORDER: BoundaryRef = { kind: "border", refId: 0 };
+const CUT: BoundaryRef = { kind: "cut", refId: 0 };
+
+const ALL_BORDER: readonly BoundaryRef[] = [BORDER, BORDER, BORDER, BORDER];
+
+const prefixSums = (lengths: readonly number[]): number[] =>
+  lengths.reduce<number[]>(
+    (acc, len) => {
+      acc.push(acc[acc.length - 1] + len);
+      return acc;
+    },
+    [0]
+  );
+
+const buildPolygonPool = (
+  rings: readonly (readonly Vec2[])[]
+): PolygonPool => ({
+  starts: Uint32Array.from(prefixSums(rings.map((ring) => ring.length))),
+  coords: Float32Array.from(
+    rings.flatMap((ring) => ring.flatMap((p) => [p.x, p.y]))
+  ),
+});
+
+/** A stream whose draws never vary — deterministic midline cuts, no jitter flip. */
+const constantStream = (value: number): RngStream => ({
+  next: () => value,
+  nextInt: () => 0,
+  fork: () => constantStream(value),
+});
+
+/** Throws if drawn from at all — proves a code path never touches the RNG. */
+const poisonStream = (): RngStream => ({
+  next: () => {
+    throw new Error("unexpected draw");
+  },
+  nextInt: () => {
+    throw new Error("unexpected draw");
+  },
+  fork: () => poisonStream(),
+});
+
+describe("computeAreaScale", () => {
+  it.each([
+    [100, LOTS.areaScaleMin],
+    [100_000, LOTS.areaScaleMax],
+    [LOTS.targetBuildingCount, 1],
+  ])("should clamp the scale when expected count is %s", (expected, scale) => {
+    expect(computeAreaScale(expected)).toBeCloseTo(scale, 6);
+  });
+});
+
+describe("subdivideBlock", () => {
+  it("should return the ring unchanged without drawing from the stream when area is already at or below target", () => {
+    const ring = rectRing(0, 0, 10, 10);
+    const result = subdivideBlock(ring, 1_000, false, 0, 0, "", poisonStream());
+    expect(result).toEqual([ring]);
+  });
+
+  it("should return the ring unchanged when the OBB-derived cut fails to cross the polygon", () => {
+    const degenerateRing = [
+      { x: 10, y: 10 },
+      { x: 10, y: 10 },
+      { x: 10, y: 10 },
+      { x: 10, y: 10 },
+    ];
+    const result = subdivideBlock(
+      degenerateRing,
+      -1,
+      false,
+      0,
+      0,
+      "",
+      constantStream(0.5)
+    );
+    expect(result).toEqual([degenerateRing]);
+  });
+
+  it("should split into two leaves when the halves already satisfy the target", () => {
+    const ring = rectRing(0, 0, 200, 100);
+    const result = subdivideBlock(
+      ring,
+      10_001,
+      false,
+      0,
+      0,
+      "",
+      constantStream(0.5)
+    );
+    expect(result.length).toBe(2);
+  });
+
+  it("should split into two leaves when the block is a slum with jittered cut direction", () => {
+    const ring = rectRing(0, 0, 200, 100);
+    const result = subdivideBlock(
+      ring,
+      10_001,
+      true,
+      0,
+      0,
+      "",
+      constantStream(0.5)
+    );
+    expect(result.length).toBe(2);
+  });
+});
+
+describe("classifyFrontages", () => {
+  it.each<[number, "street" | "landlocked"]>([
+    [6.1, "street"],
+    [5.9, "landlocked"],
+  ])("should classify a %sm cut-provenance edge as %s", (width, expected) => {
+    const ring = rectRing(0, 0, width, 50);
+    const boundary: readonly BoundaryRef[] = [CUT, BORDER, BORDER, BORDER];
+    const result = classifyFrontages(ring, boundary, [ring], false);
+    expect(result[0]).toBe(expected);
+  });
+
+  it("should merge a landlocked leaf into its street-fronting sibling when the block is not a slum", () => {
+    const blockRing = rectRing(0, 0, 200, 100);
+    const boundary: readonly BoundaryRef[] = [CUT, BORDER, BORDER, BORDER];
+    const bottomHalf = rectRing(0, 0, 200, 50);
+    const topHalf = rectRing(0, 50, 200, 50);
+    const result = classifyFrontages(
+      blockRing,
+      boundary,
+      [bottomHalf, topHalf],
+      false
+    );
+    expect(result).toEqual(["street", "landlocked-merged"]);
+  });
+
+  it("should keep a landlocked leaf unmerged when the block is a slum", () => {
+    const blockRing = rectRing(0, 0, 200, 100);
+    const boundary: readonly BoundaryRef[] = [CUT, BORDER, BORDER, BORDER];
+    const bottomHalf = rectRing(0, 0, 200, 50);
+    const topHalf = rectRing(0, 50, 200, 50);
+    const result = classifyFrontages(
+      blockRing,
+      boundary,
+      [bottomHalf, topHalf],
+      true
+    );
+    expect(result).toEqual(["street", "landlocked"]);
+  });
+});
+
+const rawBlock = (
+  overrides: Partial<Block> & {
+    readonly id: number;
+    readonly ringIndex: number;
+  }
+): Block => ({
+  boundary: ALL_BORDER,
+  neighbourIds: [],
+  district: "suburb",
+  water: false,
+  scoreMargin: 1,
+  ...overrides,
+});
+
+describe("lotsStage", () => {
+  it("should produce a single unsplit lot when the block is a megablock", () => {
+    const ring = rectRing(0, 0, 300, 300);
+    const blocks = [rawBlock({ id: 0, ringIndex: 0, district: "megablock" })];
+    const result = lotsStage(
+      { blocks, blockPolygons: buildPolygonPool([ring]) },
+      poisonStream()
+    );
+    expect(result.lots.length).toBe(1);
+  });
+
+  it("should produce no lots for a block when it is marked water", () => {
+    const waterRing = rectRing(0, 0, 100, 100);
+    const suburbRing = rectRing(500, 0, 20, 20);
+    const blocks = [
+      rawBlock({ id: 0, ringIndex: 0, water: true, district: "suburb" }),
+      rawBlock({ id: 1, ringIndex: 1, district: "suburb" }),
+    ];
+    const result = lotsStage(
+      { blocks, blockPolygons: buildPolygonPool([waterRing, suburbRing]) },
+      constantStream(0.5)
+    );
+    expect(result.lots.every((lot) => lot.blockId === 1)).toBe(true);
+  });
+
+  it("should split into more than one lot when the block area exceeds its scaled target", () => {
+    const district: DistrictKind = "suburb";
+    const targetArea = LOT_TARGET_AREA_M2[district];
+    const ring = rectRing(0, 0, targetArea, 1);
+    const blocks = [rawBlock({ id: 0, ringIndex: 0, district })];
+    const result = lotsStage(
+      { blocks, blockPolygons: buildPolygonPool([ring]) },
+      constantStream(0.5)
+    );
+    expect(result.lots.length).toBeGreaterThan(1);
+  });
+
+  it("should keep at least one lot landlocked when the block district is slum", () => {
+    const blockRing = rectRing(0, 0, 200, 100);
+    const boundary: readonly BoundaryRef[] = [CUT, BORDER, BORDER, BORDER];
+    const blocks = [
+      rawBlock({
+        id: 0,
+        ringIndex: 0,
+        district: "slum",
+        boundary,
+      }),
+    ];
+    const result = lotsStage(
+      { blocks, blockPolygons: buildPolygonPool([blockRing]) },
+      constantStream(0.5)
+    );
+    expect(result.lots.some((lot) => lot.frontage === "landlocked")).toBe(true);
+  });
+
+  it("should size the polygon pool to match the lot count when lots are built", () => {
+    const ring = rectRing(0, 0, 300, 300);
+    const blocks = [rawBlock({ id: 0, ringIndex: 0, district: "megablock" })];
+    const result = lotsStage(
+      { blocks, blockPolygons: buildPolygonPool([ring]) },
+      poisonStream()
+    );
+    expect(result.polygons.starts.length).toBe(result.lots.length + 1);
+  });
+});

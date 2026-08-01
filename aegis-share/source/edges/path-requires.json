@@ -182,6 +182,13 @@
     "specificity": 0
   },
   {
+    "edge_id": "c9d786a4-2645-e62c-d74d-3b553e5294e3",
+    "source_value": "src/lib/citygen/**",
+    "target_doc_id": "adr-0027",
+    "priority": -1,
+    "specificity": 0
+  },
+  {
     "edge_id": "d364933a-3d37-4d07-9e8c-62c9d6190eab",
     "source_value": ".claude/settings.json",
     "target_doc_id": "adr-0025",

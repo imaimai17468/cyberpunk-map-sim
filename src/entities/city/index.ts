@@ -1,0 +1,243 @@
+import { z } from "zod";
+
+/**
+ * Domain vocabulary for the procedural city generator.
+ *
+ * Per ADR-0016 this module imports nothing from the layers above it. Every
+ * closed set is declared as a `const` array plus a derived union so that adding
+ * a member is additive: per-member configuration is written as
+ * `Record<Union, T>`, which fails to compile until the new member is handled.
+ */
+
+export const generationParamsSchema = z.object({
+  seed: z.string().min(1),
+  /** Map extent in metres, square. */
+  sizeM: z.number().int().min(1024).max(4096).default(2048),
+  /** Field grid resolution per axis. */
+  cells: z.number().int().min(128).max(1024).default(512),
+});
+export type GenerationParams = z.infer<typeof generationParamsSchema>;
+
+export interface Vec2 {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** Dense row-major scalar field over the generation grid. */
+export interface Field2D {
+  readonly cells: number;
+  readonly cellSizeM: number;
+  readonly data: Float32Array;
+}
+
+export const WATER_CLASSES = ["none", "ocean", "river"] as const;
+/** @public published domain vocabulary: consumers narrow on this union even where the first slice does not, and it is the name a new member is added to */
+export type WaterClass = (typeof WATER_CLASSES)[number];
+
+export interface TerrainLayer {
+  readonly elevation: Field2D;
+  /** WaterClass ordinal per cell, indexed like Field2D.data. */
+  readonly waterMask: Uint8Array;
+  readonly waterDepth: Field2D;
+  readonly seaLevelM: number;
+}
+
+export interface FieldStack {
+  readonly slope: Field2D;
+  readonly distWater: Field2D;
+  readonly distLand: Field2D;
+  readonly localEminence: Field2D;
+  readonly floodRisk: Field2D;
+  readonly centrality: Field2D;
+  readonly shadow: Field2D;
+  readonly prestige: Field2D;
+  readonly decay: Field2D;
+}
+
+/** @public the const array is the single source of the union below; exported so a new member can be enumerated and every `Record` over it fails to compile until handled (ADR-0027 additive extension) */
+export const ANCHOR_KINDS = ["cbd", "mega", "casino"] as const;
+/** @public published domain vocabulary: consumers narrow on this union even where the first slice does not, and it is the name a new member is added to */
+export type AnchorKind = (typeof ANCHOR_KINDS)[number];
+
+export interface Anchor {
+  readonly kind: AnchorKind;
+  readonly pos: Vec2;
+}
+
+export const ROAD_CLASSES = ["highway", "avenue", "street", "alley"] as const;
+export type RoadClass = (typeof ROAD_CLASSES)[number];
+
+/**
+ * An enum rather than a boolean: tunnels are one member away.
+ *
+ * @public the const array is the single source of the union below; exported so
+ * a new member can be enumerated and every `Record` over it fails to compile
+ * until handled (ADR-0027 additive extension).
+ */
+export const CROSSINGS = ["none", "bridge"] as const;
+export type Crossing = (typeof CROSSINGS)[number];
+
+/**
+ * Flattened polyline geometry. Polyline `i` occupies the vertex range
+ * `starts[i] .. starts[i + 1]`, so `starts.length === count + 1`.
+ */
+export interface PolylinePool {
+  readonly coords: Float32Array;
+  readonly starts: Uint32Array;
+}
+
+export interface RoadNode {
+  readonly id: number;
+  readonly pos: Vec2;
+}
+
+export interface RoadEdge {
+  readonly id: number;
+  /** Node ids for arterial edges; -1 for subdivision cut and alley edges. */
+  readonly a: number;
+  readonly b: number;
+  readonly cls: RoadClass;
+  readonly crossing: Crossing;
+  readonly polylineIndex: number;
+  readonly strip: boolean;
+}
+
+export interface RoadGraph {
+  readonly nodes: readonly RoadNode[];
+  readonly edges: readonly RoadEdge[];
+  readonly polylines: PolylinePool;
+}
+
+export const DISTRICT_KINDS = [
+  "corporate",
+  "megablock",
+  "casino",
+  "luxury",
+  "suburb",
+  "slum",
+] as const;
+export type DistrictKind = (typeof DISTRICT_KINDS)[number];
+
+/** Polygon rings, pooled like PolylinePool. Rings are counter-clockwise. */
+export interface PolygonPool {
+  readonly coords: Float32Array;
+  readonly starts: Uint32Array;
+}
+
+/** @public the const array is the single source of the union below; exported so a new member can be enumerated and every `Record` over it fails to compile until handled (ADR-0027 additive extension) */
+export const BOUNDARY_PROVENANCES = [
+  "cut",
+  "arterial",
+  "border",
+  "water",
+] as const;
+/** @public published domain vocabulary: consumers narrow on this union even where the first slice does not, and it is the name a new member is added to */
+export type BoundaryProvenance = (typeof BOUNDARY_PROVENANCES)[number];
+
+/**
+ * Why a block boundary segment exists. Adjacency is computed by shared
+ * provenance id rather than by geometric proximity, so there is no epsilon.
+ */
+export interface BoundaryRef {
+  readonly kind: BoundaryProvenance;
+  readonly refId: number;
+}
+
+export interface Block {
+  /** Deterministic subdivision-DFS order. */
+  readonly id: number;
+  readonly ringIndex: number;
+  readonly boundary: readonly BoundaryRef[];
+  readonly neighbourIds: readonly number[];
+  readonly district: DistrictKind;
+  readonly water: boolean;
+  /** Argmax margin over the runner-up district; retained for tuning. */
+  readonly scoreMargin: number;
+}
+
+/** @public the const array is the single source of the union below; exported so a new member can be enumerated and every `Record` over it fails to compile until handled (ADR-0027 additive extension) */
+export const FRONTAGES = ["street", "landlocked", "landlocked-merged"] as const;
+export type Frontage = (typeof FRONTAGES)[number];
+
+export interface Lot {
+  readonly id: number;
+  readonly blockId: number;
+  readonly ringIndex: number;
+  readonly frontage: Frontage;
+}
+
+export const BUILDING_ARCHETYPES = [
+  "megabuilding",
+  "corpoTower",
+  "casino",
+  "luxuryResidence",
+  "detachedHouse",
+  "slumShack",
+] as const;
+export type BuildingArchetype = (typeof BUILDING_ARCHETYPES)[number];
+
+/** Oriented bounding box. Orientation is a unit vector, never an angle. */
+export interface Obb {
+  readonly cx: number;
+  readonly cy: number;
+  readonly facing: Vec2;
+  readonly w: number;
+  readonly d: number;
+}
+
+export interface BuildingTier {
+  readonly heightFrac: number;
+  readonly insetFrac: number;
+}
+
+export interface Building {
+  readonly id: number;
+  readonly archetype: BuildingArchetype;
+  readonly obb: Obb;
+  readonly heightM: number;
+  readonly baseZM: number;
+  /** Length 1 for every archetype except megabuilding, which has 2-4. */
+  readonly tiers: readonly BuildingTier[];
+  readonly lotId: number;
+  readonly blockId: number;
+}
+
+export interface InstanceBuffer {
+  readonly count: number;
+  /** 16 floats per instance, column-major, sorted by blockId. */
+  readonly matrices: Float32Array;
+  /** blockId -> [startInstance, endInstance); the hook for future LOD. */
+  readonly blockRanges: ReadonlyMap<number, readonly [number, number]>;
+}
+
+export const STAGE_NAMES = [
+  "terrain",
+  "hydrology",
+  "derived",
+  "anchors",
+  "social",
+  "arterials",
+  "blocks",
+  "zoning",
+  "lots",
+  "buildings",
+] as const;
+/** @public published domain vocabulary: consumers narrow on this union even where the first slice does not, and it is the name a new member is added to */
+export type StageName = (typeof STAGE_NAMES)[number];
+
+export interface CityModel {
+  readonly params: GenerationParams;
+  readonly terrain: TerrainLayer;
+  readonly fields: FieldStack;
+  readonly anchors: readonly Anchor[];
+  readonly roads: RoadGraph;
+  readonly blocks: readonly Block[];
+  readonly blockPolygons: PolygonPool;
+  readonly lots: readonly Lot[];
+  readonly lotPolygons: PolygonPool;
+  readonly buildings: readonly Building[];
+  readonly instances: Readonly<Record<BuildingArchetype, InstanceBuffer>>;
+  /** Per-stage content hash; a golden failure names the first divergent stage. */
+  readonly stageHashes: Readonly<Record<StageName, string>>;
+  readonly contentHash: string;
+}

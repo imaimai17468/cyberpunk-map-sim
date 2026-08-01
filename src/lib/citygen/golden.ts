@@ -38,7 +38,7 @@ export interface GoldenEntry {
 
 export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
   "akiba-01": {
-    contentHash: "dee79fa3cca2cb68",
+    contentHash: "48c1bd474fa07354",
     stageHashes: {
       terrain: "7e22e397873605da",
       hydrology: "fcfa14d079f26450",
@@ -46,14 +46,14 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       anchors: "77f67b220d818860",
       social: "971eb99d3052a14e",
       arterials: "6775cdb6fbff02f3",
-      blocks: "b8e0ee5cbcaa05c7",
+      blocks: "aeffa670f34435c1",
       zoning: "d84bcb7ed308020d",
-      lots: "264bd0d81fcfc5b2",
-      buildings: "0897d160c2e3355e",
+      lots: "0b05536beea52762",
+      buildings: "28d6ff17972f033c",
     },
   },
   "akiba-02": {
-    contentHash: "7648609b58e2f055",
+    contentHash: "ab32ca989984bb54",
     stageHashes: {
       terrain: "7d83a8eb1f9050c4",
       hydrology: "b201772eac6cf3ee",
@@ -61,14 +61,14 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       anchors: "49bdb410abab47d6",
       social: "8cb24c78561f0b8e",
       arterials: "f242ef0bca610ac9",
-      blocks: "730d940cdda56c49",
+      blocks: "eb7c1321c2e68119",
       zoning: "905f835c598fabea",
-      lots: "a6ce60a5f20422a7",
-      buildings: "f639ce14aeab52da",
+      lots: "b09e741f6f88a027",
+      buildings: "12f54af4feb2362b",
     },
   },
   "akiba-03": {
-    contentHash: "1c2a6024fa07315d",
+    contentHash: "bfa2db64994f82a5",
     stageHashes: {
       terrain: "1e715e3193652004",
       hydrology: "7eca9d76c27f920a",
@@ -76,10 +76,10 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       anchors: "6c1fc013e115f3e0",
       social: "3ad8ded031d6406e",
       arterials: "633799ecaa19ec0a",
-      blocks: "b8523d8ef551e759",
+      blocks: "67fa5b0c7d956d20",
       zoning: "307796c8ba0d53ee",
-      lots: "8e6a66cca35604f2",
-      buildings: "52da58a45924abb6",
+      lots: "7a60fe0e97f75341",
+      buildings: "a874581a19d5f042",
     },
   },
 };

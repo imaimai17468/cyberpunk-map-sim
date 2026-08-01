@@ -8,6 +8,7 @@ import type {
   Obb,
   PolygonPool,
   RoadGraph,
+  TerrainLayer,
   Vec2,
 } from "@/entities/city";
 import { BUILDINGS, ROAD_WIDTH_M } from "../constants";
@@ -341,6 +342,13 @@ const sampleAt = (field: Field2D, grid: Grid, point: Vec2): number =>
 
 const RELIEF_SAMPLE_SATELLITES = 4;
 
+/**
+ * Interior samples for the water veto. The same value as the relief count
+ * today, but its own knob: sharpening the slope veto has no reason to also
+ * change how finely the shoreline is probed.
+ */
+const WATER_SAMPLE_SATELLITES = 4;
+
 const requireDistrict = (
   map: ReadonlyMap<number, DistrictKind>,
   blockId: number
@@ -625,6 +633,51 @@ const isPlazaResult = (result: LotResult): result is PlazaResult =>
 const isBuildingsResult = (result: LotResult): result is BuildingsResult =>
   result.kind === "buildings";
 
+/** Nearest-cell water class at a world point. 0 is dry. */
+const waterAt = (terrain: TerrainLayer, grid: Grid, p: Vec2): number => {
+  const cells = terrain.elevation.cells;
+  const cx = Math.min(cells - 1, Math.max(0, Math.floor(p.x / grid.cellSizeM)));
+  const cy = Math.min(cells - 1, Math.max(0, Math.floor(p.y / grid.cellSizeM)));
+  return terrain.waterMask[cy * cells + cx];
+};
+
+/**
+ * Whether any part of the lot is under water.
+ *
+ * The block-level test upstream is a majority vote over five interior samples,
+ * so a block that is forty percent sea counts as land — correctly, because the
+ * dry sixty percent is real city. What it cannot do is stop the lots cut from
+ * that block running out past the shoreline, and nothing downstream looked at
+ * water at all: hundreds of buildings per seed stood in the sea, and every one
+ * of them was a slum, because slums are the archetype the design puts on the
+ * floodplain. `scripts/measure-water-occupancy.ts` prints the count and its
+ * archetype breakdown; stash this change to see the figures before the fix.
+ *
+ * Sampled rather than clipped. Clipping the lot to the coast is the better
+ * answer and a much larger change — the shoreline is a raster boundary, not a
+ * polygon — so this vetoes the whole lot instead, which errs toward a slightly
+ * thinner waterfront rather than buildings standing offshore. The corners are
+ * included because a footprint reaches them and the interior samples do not.
+ */
+const touchesWater = (
+  ring: readonly Vec2[],
+  terrain: TerrainLayer,
+  grid: Grid
+): boolean =>
+  [
+    ...ring,
+    // Edge midpoints are not decoration: `samplePolygonInteriorPoints` walks
+    // centroid-to-vertex rays and never lands on an edge, so a long lot
+    // bulging into the sea halfway along one side reads as dry at every other
+    // sample. Every building left standing in water after the first pass was
+    // exactly that shape.
+    ...ring.map((p, i) => {
+      const next = ring[(i + 1) % ring.length];
+      return { x: (p.x + next.x) / 2, y: (p.y + next.y) / 2 };
+    }),
+    ...samplePolygonInteriorPoints(ring, WATER_SAMPLE_SATELLITES),
+  ].some((p) => waterAt(terrain, grid, p) !== 0);
+
 /**
  * Stage 10: for every lot, vetoes to a plaza on a too-small footprint or
  * (for every archetype except `slumShack`) excessive relief under the
@@ -656,6 +709,9 @@ export const buildingsStage = (
         ? minimumAreaObb(ring)
         : obbAlignedTo(ring, lot.frontageDir);
     if (lotObb.w * lotObb.d < BUILDINGS.minFootprintM2) {
+      return { kind: "plaza", lotId: lot.id };
+    }
+    if (touchesWater(ring, terrain, grid)) {
       return { kind: "plaza", lotId: lot.id };
     }
     const district = requireDistrict(districtOf, lot.blockId);

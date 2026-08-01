@@ -39,6 +39,25 @@ const terrainOf = (elevation: Field2D, water = 0): TerrainLayer => ({
   seaLevelM: 0,
 });
 
+/**
+ * Terrain with a coastline: `wet(cx, cy)` decides each cell.
+ *
+ * `terrainOf` can only fill uniformly, which leaves the interesting case
+ * unreachable — a map that is all dry never exercises the water filter, and one
+ * that is all wet rejects every cut on block membership before the endpoint
+ * test is ever consulted.
+ */
+const terrainWithCoast = (
+  wet: (cx: number, cy: number) => boolean
+): TerrainLayer => ({
+  elevation: uniform(10),
+  waterMask: Uint8Array.from({ length: GRID.cells * GRID.cells }, (_v, i) =>
+    wet(i % GRID.cells, Math.floor(i / GRID.cells)) ? 1 : 0
+  ),
+  waterDepth: uniform(0),
+  seaLevelM: 0,
+});
+
 const derivedOf = (overrides: Partial<DerivedFields> = {}): DerivedFields => ({
   slope: uniform(0),
   distWater: uniform(1000),
@@ -251,7 +270,21 @@ describe("blocksStage", () => {
         `${layer.roads.polylines.coords[i * 2].toFixed(2)},${layer.roads.polylines.coords[i * 2 + 1].toFixed(2)}`;
       return [at(start), at(end - 1)].toSorted().join("|");
     });
+
     expect(new Set(keys).size).toBe(streets.length);
+  });
+
+  /**
+   * Subdivision runs over water faces too, so without a filter the open sea is
+   * carved into blocks and every cut published as a street. An all-water map is
+   * the sharpest form of the case: not one street should come out of it.
+   */
+  it("should emit no street edges when the whole map is water", () => {
+    const wet = blocksStage(
+      inputOf({ terrain: terrainOf(uniform(10), 1) }),
+      streamFromSeedWord(7)
+    );
+    expect(wet.roads.edges.filter((e) => e.cls === "street")).toEqual([]);
   });
 
   it("should address a two-point polyline when emitting a street edge", () => {
@@ -265,5 +298,83 @@ describe("blocksStage", () => {
             starts[edge.polylineIndex + 1] - starts[edge.polylineIndex] === 2
         )
     ).toBe(true);
+  });
+});
+
+/**
+ * The coastline cases. Neither uniform fixture reaches them: an all-dry map has
+ * no water to test against, and an all-wet one rejects every cut on block
+ * membership before the endpoint check runs.
+ */
+describe("blocksStage along a coastline", () => {
+  // West half sea, east half land, so cuts fall on both sides and across.
+  const coastal = blocksStage(
+    inputOf({ terrain: terrainWithCoast((cx) => cx < GRID.cells / 2) }),
+    streamFromSeedWord(7)
+  );
+
+  /** The same west-half rule the fixture was built from, in world metres. */
+  const isWet = (p: Vec2): boolean =>
+    Math.min(GRID.cells - 1, Math.max(0, Math.floor(p.x / GRID.cellSizeM))) <
+    GRID.cells / 2;
+
+  const streetEnds = (): readonly (readonly [Vec2, Vec2])[] =>
+    coastal.roads.edges
+      .filter((edge) => edge.cls === "street")
+      .map((edge) => {
+        const { starts, coords } = coastal.roads.polylines;
+        const s = starts[edge.polylineIndex];
+        const e = starts[edge.polylineIndex + 1];
+        return [
+          { x: coords[s * 2], y: coords[s * 2 + 1] },
+          { x: coords[(e - 1) * 2], y: coords[(e - 1) * 2 + 1] },
+        ] as const;
+      });
+
+  it("should drop a street when both of its ends are in water", () => {
+    expect(streetEnds().filter(([a, b]) => isWet(a) && isWet(b))).toEqual([]);
+  });
+
+  it("should keep the shoreline crossing when only one end is in water", () => {
+    expect(streetEnds().some(([a, b]) => isWet(a) !== isWet(b))).toBe(true);
+  });
+
+  /**
+   * The boundary is what `lots.ts` prices as carriageway and treats as
+   * frontage, so a `cut` ref left behind for a street the filter dropped would
+   * have the lot layer inset for a road that is not in the graph.
+   */
+  it("should retag a cut boundary when its street was dropped", () => {
+    const streetKeys = new Set(
+      streetEnds().map(([a, b]) =>
+        [
+          `${a.x.toFixed(2)},${a.y.toFixed(2)}`,
+          `${b.x.toFixed(2)},${b.y.toFixed(2)}`,
+        ]
+          .toSorted()
+          .join("|")
+      )
+    );
+    const orphaned = coastal.blocks.filter((block) => {
+      const s = coastal.polygons.starts[block.ringIndex];
+      const e = coastal.polygons.starts[block.ringIndex + 1];
+      const ring = Array.from({ length: e - s }, (_v, i) => ({
+        x: coastal.polygons.coords[(s + i) * 2],
+        y: coastal.polygons.coords[(s + i) * 2 + 1],
+      }));
+      return block.boundary.some((ref, i) => {
+        if (ref.kind !== "cut") return false;
+        const a = ring[i];
+        const b = ring[(i + 1) % ring.length];
+        const key = [
+          `${a.x.toFixed(2)},${a.y.toFixed(2)}`,
+          `${b.x.toFixed(2)},${b.y.toFixed(2)}`,
+        ]
+          .toSorted()
+          .join("|");
+        return !streetKeys.has(key);
+      });
+    });
+    expect(orphaned).toEqual([]);
   });
 });

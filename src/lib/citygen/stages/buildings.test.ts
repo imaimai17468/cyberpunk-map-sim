@@ -129,6 +129,8 @@ const buildDerived = (): DerivedFields => ({
 
 interface ContextOptions {
   readonly elevationSlope?: number;
+  /** Fills the whole water mask, so every lot reads as submerged. */
+  readonly allWater?: boolean;
   readonly centrality?: number;
   readonly prestige?: number;
   readonly decay?: number;
@@ -148,7 +150,9 @@ const buildFields = (opts: ContextOptions): FieldStack => ({
 
 const buildTerrain = (opts: ContextOptions): TerrainLayer => ({
   elevation: linearElevationField(opts.elevationSlope ?? 0),
-  waterMask: new Uint8Array(GRID.cells * GRID.cells),
+  waterMask: new Uint8Array(GRID.cells * GRID.cells).fill(
+    opts.allWater === true ? 1 : 0
+  ),
   waterDepth: constantField(0),
   seaLevelM: 0,
 });
@@ -672,5 +676,67 @@ describe("buildingsStage clearance along the footprint's own axis", () => {
     const builtArea = (result: typeof clear): number =>
       result.buildings.reduce((sum, b) => sum + footprintArea(b.obb), 0);
     expect(builtArea(withRoad)).toBeLessThan(builtArea(clear));
+  });
+});
+
+/**
+ * A block is called water by a majority vote over five interior samples, so a
+ * block that is four-tenths sea is land and its lots run out past the shore.
+ * Nothing downstream looked at water at all, which put whole slum districts in
+ * the sea. The veto is per lot for that reason.
+ */
+describe("buildingsStage over water", () => {
+  it("should build nothing when the lot is submerged", () => {
+    const ring = rectRing(0, 0, 100, 100);
+    const lotLayer = {
+      lots: [rawLot(0, 0)],
+      polygons: buildPolygonPool([ring]),
+    };
+    const result = buildingsStage(
+      {
+        context: buildContext({ allWater: true }),
+        blocks: [rawBlock(0, "suburb")],
+        lotLayer,
+        roads: EMPTY_ROADS,
+      },
+      constantStream(0.5)
+    );
+    expect(result.buildings).toEqual([]);
+  });
+
+  it("should name the lot as a plaza when it is submerged", () => {
+    const ring = rectRing(0, 0, 100, 100);
+    const lotLayer = {
+      lots: [rawLot(0, 0)],
+      polygons: buildPolygonPool([ring]),
+    };
+    const result = buildingsStage(
+      {
+        context: buildContext({ allWater: true }),
+        blocks: [rawBlock(0, "suburb")],
+        lotLayer,
+        roads: EMPTY_ROADS,
+      },
+      constantStream(0.5)
+    );
+    expect(result.plazaLotIds).toEqual([0]);
+  });
+
+  it("should still build when the lot is entirely dry", () => {
+    const ring = rectRing(0, 0, 100, 100);
+    const lotLayer = {
+      lots: [rawLot(0, 0)],
+      polygons: buildPolygonPool([ring]),
+    };
+    const result = buildingsStage(
+      {
+        context: buildContext(),
+        blocks: [rawBlock(0, "suburb")],
+        lotLayer,
+        roads: EMPTY_ROADS,
+      },
+      constantStream(0.5)
+    );
+    expect(result.buildings.length).toBeGreaterThan(0);
   });
 });

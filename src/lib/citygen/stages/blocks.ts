@@ -347,20 +347,23 @@ const subdivide = (
   ];
 };
 
+/** Nearest-cell water lookup at a world point. */
+const isWetAt = (input: BlocksInput, p: Vec2): boolean => {
+  const cells = input.terrain.elevation.cells;
+  const cx = Math.min(
+    cells - 1,
+    Math.max(0, Math.floor(p.x / input.terrain.elevation.cellSizeM))
+  );
+  const cy = Math.min(
+    cells - 1,
+    Math.max(0, Math.floor(p.y / input.terrain.elevation.cellSizeM))
+  );
+  return input.terrain.waterMask[cy * cells + cx] !== 0;
+};
+
 const isWaterBlock = (ring: readonly Vec2[], input: BlocksInput): boolean => {
   const samples = samplePolygonInteriorPoints(ring, BLOCK_SAMPLE_COUNT);
-  const wet = samples.filter((p) => {
-    const cells = input.terrain.elevation.cells;
-    const cx = Math.min(
-      cells - 1,
-      Math.max(0, Math.floor(p.x / input.terrain.elevation.cellSizeM))
-    );
-    const cy = Math.min(
-      cells - 1,
-      Math.max(0, Math.floor(p.y / input.terrain.elevation.cellSizeM))
-    );
-    return input.terrain.waterMask[cy * cells + cx] !== 0;
-  }).length;
+  const wet = samples.filter((p) => isWetAt(input, p)).length;
   return wet / samples.length >= BLOCKS.waterBlockFraction;
 };
 
@@ -407,7 +410,7 @@ const adjacencyOf = (
   });
 };
 
-/** Centimetre-rounded coordinate, so two copies of a shared cut key alike. */
+/** Centimetre-rounded coordinate, so both copies of a shared cut key alike. */
 const keyCoord = (v: number): string => (Math.round(v * 100) / 100).toFixed(2);
 
 /** Rounded, order-independent key for one undirected segment. */
@@ -429,27 +432,70 @@ const segmentKey = (a: Vec2, b: Vec2): string => {
  * Each cut is shared by the two blocks either side of it, so the segments are
  * deduplicated by their endpoints. Node ids are -1, which is the contract's
  * value for an edge that is not between two arterial nodes.
+ *
+ * Cuts belonging only to water blocks are dropped. Subdivision runs over every
+ * face, water included — the recursion has no reason to stop at a shoreline —
+ * so a stretch of open sea gets carved up exactly like a city block, and before
+ * this those cuts were published as streets, in the hundreds per seed. A water
+ * block yields no lots and no buildings, so they led nowhere and served
+ * nothing. `scripts/measure-water-occupancy.ts` counts them; stash this change
+ * to see the figures the fix was written against.
+ *
+ * The share is what makes this a filter and not a partition: a cut between a
+ * water block and a dry one is the shoreline, and it is a real street on the
+ * landward side, so a segment survives if *either* of its blocks is dry. The
+ * dedup pass is what sees both sides, which is why the two are folded together
+ * rather than run in sequence.
+ *
+ * Block membership alone still leaves a road in the sea, though, because a cut
+ * shared with a dry block can run on past the shoreline into an inlet, and a
+ * handful per seed did. So the endpoints are tested too, and a segment with
+ * both of them in water is dropped whatever its blocks say. One end wet is
+ * kept: that is the shoreline crossing itself, and the coast is exactly where a
+ * street belongs — `bothEndsWet` and `wetStreets` in the measurement script are
+ * the two counts, and only the first should ever be zero.
  */
 const streetEdgesOf = (
   leaves: readonly Leaf[],
+  water: readonly boolean[],
+  isWet: (p: Vec2) => boolean,
   edgeIdBase: number,
   polylineIndexBase: number
 ): {
   readonly edges: readonly RoadEdge[];
   readonly coords: readonly number[];
+  /**
+   * Segment keys that became streets. The blocks are retagged against this, so
+   * a boundary can never claim a road the graph does not carry.
+   */
+  readonly survivingKeys: ReadonlySet<string>;
 } => {
+  // Keyed by geometry, not by cut id: one cut is split again by every later
+  // recursion that crosses it, so a single id names many segments and deduping
+  // on it would publish one of them and lose the rest.
+  const dryByKey = new Map<string, boolean>();
+  leaves.forEach((leaf, index) =>
+    leaf.ring.forEach((point, i) => {
+      if (leaf.edgeRefs[i].kind !== "cut") return;
+      const key = segmentKey(point, leaf.ring[(i + 1) % leaf.ring.length]);
+      dryByKey.set(key, (dryByKey.get(key) ?? false) || !water[index]);
+    })
+  );
+
   const seen = new Set<string>();
   const segments = leaves.flatMap((leaf) =>
     leaf.ring.flatMap((point, i) => {
       if (leaf.edgeRefs[i].kind !== "cut") return [];
       const next = leaf.ring[(i + 1) % leaf.ring.length];
       const key = segmentKey(point, next);
-      if (seen.has(key)) return [];
+      if (seen.has(key) || dryByKey.get(key) !== true) return [];
       seen.add(key);
-      return [[point, next] as const];
+      if (isWet(point) && isWet(next)) return [];
+      return [{ a: point, b: next, key }];
     })
   );
   return {
+    survivingKeys: new Set(segments.map((s) => s.key)),
     edges: segments.map((_segment, i) => ({
       id: edgeIdBase + i,
       a: -1,
@@ -459,7 +505,7 @@ const streetEdgesOf = (
       polylineIndex: polylineIndexBase + i,
       strip: false,
     })),
-    coords: segments.flatMap(([a, b]) => [a.x, a.y, b.x, b.y]),
+    coords: segments.flatMap(({ a, b }) => [a.x, a.y, b.x, b.y]),
   };
 };
 
@@ -501,25 +547,53 @@ export const blocksStage = (
   );
   const neighbours = adjacencyOf(leaves);
 
-  const blocks: readonly RawBlock[] = leaves.map((leaf, index) => ({
-    id: index,
-    ringIndex: index,
-    boundary: leaf.edgeRefs,
-    neighbourIds: neighbours[index],
-    water: isWaterBlock(leaf.ring, input),
-  }));
+  const water = leaves.map((leaf) => isWaterBlock(leaf.ring, input));
 
   // The arterials pass through untouched; the cuts are appended as streets, so
   // the road graph is the whole network rather than just its skeleton.
   const arterialPool = input.roads.polylines;
   const streets = streetEdgesOf(
     leaves,
+    water,
+    (p) => isWetAt(input, p),
     input.roads.edges.reduce((max, e) => Math.max(max, e.id), -1) + 1,
     arterialPool.starts.length - 1
   );
   const streetStarts = streets.edges.map(
     (_edge, i) => arterialPool.coords.length / 2 + i * 2
   );
+
+  /**
+   * A cut the water filter rejected is no longer a street, so the boundary must
+   * stop calling it one.
+   *
+   * `lots.ts` reads this: it prices a `cut` edge at half a street's carriageway
+   * and treats it as frontage a lot can face. Leaving the ref as `cut` after
+   * dropping its edge would have the lot layer inset for, and front onto, a
+   * road that exists nowhere in the graph — measured at 17 to 39 such refs per
+   * seed. `water` is the honest kind and `lots.ts` already handles it: no
+   * carriageway, no frontage. It costs no access, because a rejected cut is by
+   * construction one whose blocks were wet or whose own ends were in the sea.
+   */
+  const boundaryOf = (leaf: Leaf): readonly BoundaryRef[] =>
+    leaf.edgeRefs.map((ref, i) => {
+      if (ref.kind !== "cut") return ref;
+      const key = segmentKey(
+        leaf.ring[i],
+        leaf.ring[(i + 1) % leaf.ring.length]
+      );
+      return streets.survivingKeys.has(key)
+        ? ref
+        : ({ kind: "water", refId: ref.refId } as const);
+    });
+
+  const blocks: readonly RawBlock[] = leaves.map((leaf, index) => ({
+    id: index,
+    ringIndex: index,
+    boundary: boundaryOf(leaf),
+    neighbourIds: neighbours[index],
+    water: water[index],
+  }));
 
   return {
     blocks,

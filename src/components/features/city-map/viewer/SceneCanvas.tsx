@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef } from "react";
 import * as THREE from "three/webgpu";
+import { pass } from "three/tsl";
+// `bloom` is an addon node, not part of the core TSL surface.
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import type { CityModel } from "@/entities/city";
 import type { CityViewMode } from "../cityModelMachine";
 import { type CityCameras, createCameras } from "./cameras";
@@ -33,6 +36,27 @@ interface Runtime {
   /** Latest viewport aspect, kept current by the resize observer. */
   aspect: number;
   /**
+   * The post-processing pipeline, and the (scene, viewMode) pair it was built
+   * for. `pass()` binds a specific scene and camera, so both a model swap and a
+   * view switch invalidate it.
+   */
+  pipeline: THREE.RenderPipeline | null;
+  pipelineKey: string | null;
+  /**
+   * The nodes hanging off `pipeline.outputNode`, which own GPU memory that
+   * nothing else reclaims.
+   *
+   * `RenderPipeline.dispose()` frees only its own quad-mesh material and does
+   * not walk `outputNode`; the renderer's caches are `WeakMap`s whose `dispose`
+   * replaces the map rather than releasing what is in it, and three registers
+   * no finalizer. So a `PassNode` (one render target) and a `BloomNode` (eleven,
+   * plus its materials) survive every rebuild unless they are disposed by hand
+   * — and the key rebuilds on every view toggle and every regeneration.
+   *
+   * Structurally typed so this does not depend on three's internal node types.
+   */
+  pipelineNodes: readonly { readonly dispose: () => void }[];
+  /**
    * The map extent the current cameras were built for, or null if none exist.
    *
    * Cameras cannot be created at renderer-init time: the extent is a generation
@@ -43,6 +67,21 @@ interface Runtime {
    */
   cameraSizeM: number | null;
 }
+
+/**
+ * Free the current post-processing pipeline and everything hanging off it.
+ *
+ * Idempotent, and safe to call when none has been built yet — both the rebuild
+ * path and the unmount path go through here so neither can be the one that
+ * forgets. See `Runtime.pipelineNodes` for why the nodes need this by hand.
+ */
+const releasePipeline = (state: Runtime): void => {
+  state.pipeline?.dispose();
+  state.pipelineNodes.forEach((node) => node.dispose());
+  state.pipeline = null;
+  state.pipelineNodes = [];
+  state.pipelineKey = null;
+};
 
 const hasAnyBackend = (): boolean =>
   typeof navigator !== "undefined" &&
@@ -67,6 +106,9 @@ export function SceneCanvas({
     viewMode,
     aspect: 1,
     cameraSizeM: null,
+    pipeline: null,
+    pipelineKey: null,
+    pipelineNodes: [],
   });
 
   // Read at frame time rather than mirrored into state: the render loop is
@@ -107,7 +149,42 @@ export function SceneCanvas({
             const scene = state.scene;
             const cameras = state.cameras;
             if (scene === null || cameras === null) return;
-            renderer.render(scene.scene, cameras.active(state.viewMode));
+            const camera = cameras.active(state.viewMode);
+            scene.setViewMode(state.viewMode);
+            const key = `${scene.id}:${state.viewMode}`;
+            if (state.pipelineKey !== key) {
+              // Safe to free before building the replacement: the outgoing
+              // pipeline's last `render()` completed in an earlier frame of this
+              // same single-threaded loop, so nothing is mid-flight.
+              releasePipeline(state);
+
+              const scenePass = pass(scene.scene, camera);
+              const composed = new THREE.RenderPipeline(renderer);
+              // Bloom is a photograph of light, so only the night view gets it.
+              // Over the plan's flat fills it had nothing to pick out and simply
+              // blew the brightest district to white, taking its outline with it
+              // — the one thing a plan owes you.
+              //
+              // In the night view it is thresholded so only the emissive window
+              // bays and the strip bleed; without a threshold the terrain glows
+              // too and the whole frame turns to haze.
+              if (state.viewMode === "3d") {
+                const bloomNode = bloom(
+                  scenePass.getTextureNode(),
+                  0.85,
+                  0.35,
+                  0.55
+                );
+                composed.outputNode = scenePass.add(bloomNode);
+                state.pipelineNodes = [scenePass, bloomNode];
+              } else {
+                composed.outputNode = scenePass;
+                state.pipelineNodes = [scenePass];
+              }
+              state.pipeline = composed;
+              state.pipelineKey = key;
+            }
+            state.pipeline?.render();
           });
           onRendererReady();
         })
@@ -121,6 +198,7 @@ export function SceneCanvas({
       return () => {
         state.generation += 1;
         void renderer.setAnimationLoop(null);
+        releasePipeline(state);
         state.scene?.dispose();
         state.scene = null;
         state.cameras = null;

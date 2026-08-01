@@ -5,6 +5,7 @@ import {
   type RoadClass,
   type RoadEdge,
 } from "@/entities/city";
+import { ROAD_BRIDGE, ROAD_LAMP } from "./palette";
 
 /**
  * Roads as one `LineSegments` per class, drawn from the polyline pool.
@@ -17,20 +18,20 @@ import {
 const ROAD_LIFT_M = 1.5;
 
 const CLASS_COLOR: Readonly<Record<RoadClass, number>> = {
-  highway: 0xe0b978,
-  avenue: 0xb58f5a,
-  street: 0x6d6a63,
-  alley: 0x4a4744,
+  highway: ROAD_LAMP,
+  avenue: ROAD_LAMP,
+  street: 0xb08a5c,
+  alley: 0x5c4a38,
 };
 
-/** Bridges are drawn distinctly: they are the visible proof terrain shaped the roads. */
-const BRIDGE_COLOR = 0x63c2d6;
+/** Bridges stay the one cool note: they are the terrain showing through. */
+const BRIDGE_COLOR = ROAD_BRIDGE;
 
 const CLASS_OPACITY: Readonly<Record<RoadClass, number>> = {
   highway: 1,
-  avenue: 0.9,
-  street: 0.65,
-  alley: 0.4,
+  avenue: 0.85,
+  street: 0.5,
+  alley: 0.28,
 };
 
 /** Flatten one polyline into consecutive segment endpoints. */

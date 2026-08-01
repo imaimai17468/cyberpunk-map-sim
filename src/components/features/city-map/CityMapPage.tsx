@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { STAGE_NAMES } from "@/entities/city";
+import { DistrictLegend } from "./DistrictLegend";
 import { SeedControls } from "./SeedControls";
 import { isModelStale } from "./cityModelMachine";
 import { useCityModel } from "./useCityModel";
@@ -62,6 +63,12 @@ export function CityMapPage() {
             <dt className="text-muted-foreground">Content hash</dt>
             <dd className="truncate font-mono">{state.model.contentHash}</dd>
           </dl>
+        ) : null}
+
+        {/* The key belongs to the plan; the 3D view encodes district as
+            silhouette and window pattern, not as flat colour. */}
+        {state.model !== null && state.viewMode === "2d" ? (
+          <DistrictLegend model={state.model} />
         ) : null}
       </aside>
 

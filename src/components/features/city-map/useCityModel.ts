@@ -56,7 +56,7 @@ export interface CityModelController {
   readonly state: Transition["state"];
   readonly generate: () => void;
   readonly cancel: () => void;
-  readonly setParams: (params: GenerationParams) => void;
+  readonly setParams: (patch: Partial<GenerationParams>) => void;
   readonly setViewMode: (viewMode: CityViewMode) => void;
   readonly retryInit: () => void;
   readonly onRendererReady: () => void;
@@ -157,7 +157,8 @@ export const useCityModel = (
     generate: useCallback(() => dispatch({ type: "REQUEST_GENERATE" }), []),
     cancel: useCallback(() => dispatch({ type: "CANCEL" }), []),
     setParams: useCallback(
-      (params: GenerationParams) => dispatch({ type: "EDIT_PARAMS", params }),
+      (patch: Partial<GenerationParams>) =>
+        dispatch({ type: "EDIT_PARAMS", patch }),
       []
     ),
     setViewMode: useCallback(

@@ -20,7 +20,7 @@ interface SeedControlsProps {
   readonly busy: boolean;
   readonly canGenerate: boolean;
   readonly stale: boolean;
-  readonly onParamsChange: (params: GenerationParams) => void;
+  readonly onParamsChange: (patch: Partial<GenerationParams>) => void;
   readonly onGenerate: () => void;
   readonly onCancel: () => void;
   readonly onViewModeChange: (viewMode: CityViewMode) => void;
@@ -55,9 +55,7 @@ export function SeedControls({
           value={params.seed}
           spellCheck={false}
           autoComplete="off"
-          onChange={(event) =>
-            onParamsChange({ ...params, seed: event.target.value })
-          }
+          onChange={(event) => onParamsChange({ seed: event.target.value })}
         />
         <p className="text-xs text-muted-foreground">
           The same seed always produces the same city.
@@ -72,7 +70,7 @@ export function SeedControls({
               key={size}
               type="button"
               variant={params.sizeM === size ? "default" : "secondary"}
-              onClick={() => onParamsChange({ ...params, sizeM: size })}
+              onClick={() => onParamsChange({ sizeM: size })}
             >
               {size} m
             </Button>
@@ -88,7 +86,7 @@ export function SeedControls({
               key={cells}
               type="button"
               variant={params.cells === cells ? "default" : "secondary"}
-              onClick={() => onParamsChange({ ...params, cells })}
+              onClick={() => onParamsChange({ cells })}
             >
               {cells}
             </Button>

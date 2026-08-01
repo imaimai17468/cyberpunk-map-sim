@@ -63,7 +63,7 @@ export type CityModelEvent =
   | { readonly type: "NO_BACKEND"; readonly message: string }
   | { readonly type: "INIT_FAILED"; readonly message: string }
   | { readonly type: "RETRY_INIT" }
-  | { readonly type: "EDIT_PARAMS"; readonly params: GenerationParams }
+  | { readonly type: "EDIT_PARAMS"; readonly patch: Partial<GenerationParams> }
   | { readonly type: "REQUEST_GENERATE" }
   | {
       readonly type: "WORKER_PROGRESS";
@@ -182,12 +182,23 @@ const onRequestGenerate = (state: CityModelState): Transition => {
   return startJob(state, state.model === null ? "generating" : "regenerating");
 };
 
+/**
+ * Merged here rather than assembled by the caller.
+ *
+ * A control that sends a whole `GenerationParams` has to build it from the
+ * props it was last rendered with, so two edits dispatched in the same tick
+ * both derive from the pre-edit value and the second silently discards the
+ * first — clicking an extent and a resolution together kept only the
+ * resolution. Taking a patch and merging against `state.formParams` makes the
+ * reducer the only thing that ever reads the current value, so same-tick edits
+ * compose instead of racing.
+ */
 const onEditParams = (
   state: CityModelState,
-  params: GenerationParams
+  patch: Partial<GenerationParams>
 ): Transition =>
   RENDERER_READY_PHASES.has(state.phase)
-    ? stay({ ...state, formParams: params })
+    ? stay({ ...state, formParams: { ...state.formParams, ...patch } })
     : stay(state);
 
 const endJob = (
@@ -306,7 +317,7 @@ export const cityModelReducer = (
     case "RETRY_INIT":
       return onRetryInit(state);
     case "EDIT_PARAMS":
-      return onEditParams(state, event.params);
+      return onEditParams(state, event.patch);
     case "REQUEST_GENERATE":
       return onRequestGenerate(state);
     case "WORKER_PROGRESS":

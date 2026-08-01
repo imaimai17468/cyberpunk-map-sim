@@ -354,7 +354,7 @@ describe("staleness", () => {
       isModelStale(
         run([
           ...READY_WITH_CITY,
-          { type: "EDIT_PARAMS", params: params("akiba-02") },
+          { type: "EDIT_PARAMS", patch: { seed: "akiba-02" } },
         ])
       )
     ).toBe(true);
@@ -364,8 +364,24 @@ describe("staleness", () => {
     expect(
       run([
         ...READY_WITH_CITY,
-        { type: "EDIT_PARAMS", params: params("akiba-02") },
+        { type: "EDIT_PARAMS", patch: { seed: "akiba-02" } },
       ]).model?.contentHash
     ).toBe("hash-akiba-01");
+  });
+
+  /**
+   * The regression that motivated patches. Two edits dispatched without a
+   * render between them used to be built from the same pre-edit params, so the
+   * second overwrote the first: clicking an extent and a resolution together
+   * kept only the resolution.
+   */
+  it("should keep both edits when two land without a render between them", () => {
+    expect(
+      run([
+        ...READY_WITH_CITY,
+        { type: "EDIT_PARAMS", patch: { sizeM: 1024 } },
+        { type: "EDIT_PARAMS", patch: { cells: 128 } },
+      ]).formParams
+    ).toEqual({ ...params("akiba-01"), sizeM: 1024, cells: 128 });
   });
 });

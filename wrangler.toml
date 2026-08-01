@@ -7,24 +7,7 @@ main = "./src/ssr.tsx"
 compatibility_date = "2026-07-15"
 compatibility_flags = ["nodejs_compat"]
 
-[[d1_databases]]
-binding = "DB"
-database_name = "local-db"
-database_id = "00000000-0000-0000-0000-000000000000"
-
-[[r2_buckets]]
-binding = "AVATARS_BUCKET"
-bucket_name = "local-avatars"
-
-[vars]
-BETTER_AUTH_URL = "http://localhost:5173"
-
-# Declared so `wrangler types` emits these on CloudflareEnv deterministically.
-# Values are never here — they are registered with `wrangler secret put`
-# (ADR-0017). Without this block the generator falls back to whatever local env
-# file it finds, so the type differs between a developer machine and CI.
-#
-# Naming a secret here also makes it required at deploy time, so register it with
-# `wrangler secret put` before adding the name — see docs/DEPLOYMENT.md.
-[secrets]
-required = ["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
+# No bindings and no secrets: city generation runs entirely in the browser, in a
+# Web Worker, so the Worker only serves the SSR shell and the static assets.
+# `wrangler types` still emits an empty CloudflareEnv, which `src/ssr.tsx`
+# annotates against.

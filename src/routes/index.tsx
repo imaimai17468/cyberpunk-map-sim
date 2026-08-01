@@ -16,9 +16,8 @@ const STACK = [
   { name: "TanStack Start" },
   { name: "Cloudflare Workers" },
   { name: "shadcn/ui" },
+  { name: "three.js / WebGPU" },
   { name: "Tailwind CSS v4" },
-  { name: "Better Auth" },
-  { name: "Drizzle ORM" },
 ] as const;
 
 function HomeComponent() {
@@ -26,12 +25,10 @@ function HomeComponent() {
     <div className="flex flex-col gap-12 pb-16">
       <section className="flex flex-col gap-3">
         <h1 className="text-2xl font-medium tracking-tight">
-          imaimai-front-template
+          cyberpunk-map-sim
         </h1>
         <p className="max-w-prose text-muted-foreground">
-          TanStack Start + Cloudflare Workers
-          のフルスタックテンプレート。和色パレットと squircle
-          コーナーを標準装備。
+          地形から街を生成するサイバーパンク都市シミュレータ。シード値が同じなら常に同じ都市が生成されます。
         </p>
         <a
           href="https://github.com/imaimai17468/imaimai-front-templete"
@@ -63,7 +60,6 @@ function HomeComponent() {
             <code>{`git clone https://github.com/imaimai17468/imaimai-front-templete.git
 cd imaimai-front-templete
 bun install
-cp .env.local.example .env.local
 bun run dev`}</code>
           </pre>
         </section>

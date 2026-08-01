@@ -1,6 +1,7 @@
 import {
   type CityModel,
   DISTRICT_KINDS,
+  type DistrictKind,
   type FieldStack,
   type GenerationParams,
   STAGE_NAMES,
@@ -34,6 +35,23 @@ import { zoningStage } from "./stages/zoning";
 export type ProgressCallback = (stageIndex: number) => void;
 
 const noop: ProgressCallback = () => undefined;
+
+/**
+ * Canonical bytes for the zoning stage: one district *index* per block.
+ *
+ * Exported so the collision this replaced stays tested. Hashing the district
+ * name's length instead made `casino`/`luxury`/`suburb` (all six characters)
+ * and `corporate`/`megablock` (both nine) indistinguishable, so this stage's
+ * hash could not localise exactly the reassignments it exists to localise.
+ */
+export const zoningStageBytes = (
+  blocks: readonly { readonly district: DistrictKind }[]
+): Uint8Array =>
+  byteWriter()
+    .u32Array(
+      Uint32Array.from(blocks.map((b) => DISTRICT_KINDS.indexOf(b.district)))
+    )
+    .finish();
 
 /** Canonical bytes for one field, length-prefixed. */
 const fieldBytes = (data: Float32Array): Uint8Array =>
@@ -142,16 +160,7 @@ export const generateCity = (
       .u32(blockLayer.blocks.length)
       .f32Array(blockLayer.polygons.coords)
       .finish(),
-    zoning: byteWriter()
-      // The district's index, not its name length: `casino`/`luxury`/`suburb`
-      // are all six characters, so hashing the length made this stage's hash
-      // blind to exactly the reassignments it exists to localise.
-      .u32Array(
-        Uint32Array.from(
-          zonedBlocks.map((b) => DISTRICT_KINDS.indexOf(b.district))
-        )
-      )
-      .finish(),
+    zoning: zoningStageBytes(zonedBlocks),
     lots: byteWriter()
       .u32(lotLayer.lots.length)
       .f32Array(lotLayer.polygons.coords)

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DISTRICT_KINDS, type GenerationParams } from "@/entities/city";
-import { generateCity } from "./pipeline";
+import {
+  DISTRICT_KINDS,
+  type DistrictKind,
+  type GenerationParams,
+} from "@/entities/city";
+import { generateCity, zoningStageBytes } from "./pipeline";
 import { totalInstanceCount } from "./stages/assemble";
 
 /**
@@ -97,4 +101,62 @@ describe("district composition", () => {
   it("should place more than one kind of district when the map is generated", () => {
     expect(new Set(city.blocks.map((b) => b.district)).size).toBeGreaterThan(1);
   });
+});
+
+const bytesOf = (districts: readonly DistrictKind[]): string =>
+  [...zoningStageBytes(districts.map((district) => ({ district })))].join(",");
+
+/**
+ * Regression for the zoning stage hash.
+ *
+ * The encoder previously used the district *name length*, which made the
+ * three six-character districts indistinguishable. The whole point of a
+ * per-stage hash is that a golden failure names the stage that diverged, so a
+ * collision here silently costs that diagnostic.
+ */
+describe("zoningStageBytes", () => {
+  it("should differ when two same-length districts are swapped", () => {
+    expect(bytesOf(["casino", "luxury"])).not.toBe(
+      bytesOf(["luxury", "casino"])
+    );
+  });
+
+  it("should differ when a block moves between two nine-character districts", () => {
+    expect(bytesOf(["corporate"])).not.toBe(bytesOf(["megablock"]));
+  });
+
+  it.each([
+    ["casino", "luxury"],
+    ["luxury", "suburb"],
+    ["casino", "suburb"],
+  ] as const)(
+    "should encode %s and %s differently when both are six characters",
+    (a, b) => {
+      expect(bytesOf([a])).not.toBe(bytesOf([b]));
+    }
+  );
+
+  it("should produce identical bytes when the district sequence is unchanged", () => {
+    expect(bytesOf(["slum", "corporate"])).toBe(bytesOf(["slum", "corporate"]));
+  });
+});
+
+/**
+ * The design's own district-coverage invariant.
+ *
+ * Zoning is a relative argmax, so nothing structurally guarantees all six
+ * districts appear — the guarantee is empirical, over the fixture seeds. It
+ * failed before the affinity weights were calibrated (slum took 57-61% of
+ * blocks and luxury and suburb were 0-3%), which is exactly the regression
+ * this pins.
+ */
+describe("district coverage on fixture seeds", () => {
+  it.each(["akiba-01", "akiba-02", "akiba-03"])(
+    "should place every district when generating seed %s",
+    (seed) => {
+      const generated = generateCity(params({ seed, cells: 256 }));
+      const present = new Set(generated.blocks.map((b) => b.district));
+      expect(DISTRICT_KINDS.filter((k) => !present.has(k))).toEqual([]);
+    }
+  );
 });

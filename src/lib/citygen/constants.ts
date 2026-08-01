@@ -83,7 +83,15 @@ export const SOCIAL = {
     shadow: -0.3,
   },
   decay: {
-    remoteness: 0.45,
+    /**
+     * Distance alone should not create a slum.
+     *
+     * At 0.45 this term alone put decay at ~0.36 map-wide, which handed 57-61%
+     * of blocks to `slum` on every fixture seed and left luxury and suburb at
+     * 0-3%. Design §6 says slums get the *residue* — shadow, flood risk, steep
+     * leftovers — not merely the periphery, which is where suburbs belong.
+     */
+    remoteness: 0.18,
     flood: 0.25,
     steepness: 0.2,
     shadow: 0.3,
@@ -145,7 +153,12 @@ export const BLOCKS = {
 
 /** Stage 8 — zoning affinity weights, per district. */
 export const ZONING = {
-  corporate: { centrality: 2.2, prestige: 0.5, decay: -1.5 },
+  /**
+   * Corporate is a core, not a region. At 2.2 it beat suburb across most of
+   * the map once decay came down (43-48% of blocks); the crossover with
+   * suburb's flat base needs to sit at genuinely high centrality.
+   */
+  corporate: { centrality: 1.5, prestige: 0.5, decay: -1.5 },
   casino: { stripAdjacency: 3, waterBand: 1.2, centrality: 0.8 },
   luxury: { prestige: 2, eminence: 1, centrality: -1.2, decay: -2 },
   suburb: {

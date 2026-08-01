@@ -6,8 +6,10 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-palette-ring: var(--palette-ring);
-  --font-sans: "Hiragino Kaku Gothic ProN", "Hiragino Sans", sans-serif;
+  --font-sans:
+    "Hiragino Kaku Gothic ProN", "ヒラギノ角ゴ ProN W3",
+    "Hiragino Kaku Gothic Pro", "ヒラギノ角ゴ Pro W3", "Hiragino Sans",
+    "メイリオ", Meiryo, "游ゴシック", YuGothic, sans-serif;
   --font-mono: "Menlo", monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -47,15 +49,6 @@
 }
 
 :root {
-  /* Fixed light-mode Wairo named colors — intentionally NOT theme-flipped.
-     Cloned from the :root semantic tokens; update together if palette changes. */
-  --palette-shikkoku: oklch(0.08 0.04 265);
-  --palette-nibiiro: oklch(0.55 0.005 90);
-  --palette-ginnezumi: oklch(0.88 0.005 90);
-  --palette-shironezumi: oklch(0.95 0.005 90);
-  --palette-unohana: oklch(0.993 0.003 90);
-  /* Swatch ring — themed to contrast against the page background, unlike the swatches above. */
-  --palette-ring: oklch(0.08 0.04 265 / 20%);
   --radius: 8px;
   --background: oklch(0.993 0.003 90);
   --foreground: oklch(0.08 0.04 265);
@@ -91,38 +84,64 @@
 }
 
 .dark {
-  --palette-ring: oklch(0.993 0.003 90 / 20%);
-  --background: oklch(0.08 0.04 265);
-  --foreground: oklch(0.993 0.003 90);
-  --card: oklch(0.14 0.03 265);
-  --card-foreground: oklch(0.993 0.003 90);
-  --popover: oklch(0.14 0.03 265);
-  --popover-foreground: oklch(0.993 0.003 90);
-  --primary: oklch(0.93 0.003 90);
-  --primary-foreground: oklch(0.08 0.04 265);
-  --secondary: oklch(0.18 0.02 265);
-  --secondary-foreground: oklch(0.993 0.003 90);
-  --muted: oklch(0.18 0.02 265);
-  --muted-foreground: oklch(0.7 0.005 90);
-  --accent: oklch(0.18 0.02 265);
-  --accent-foreground: oklch(0.993 0.003 90);
+  /* Warm near-black, not the stock slate-indigo.
+     The previous scale was hue 265 at chroma 0.04 — a cool blue-charcoal, which
+     is the default every dark UI ships and which fought the map: the generated
+     city is deliberately lit by sodium vapour against 漆黒, and a blue chrome
+     around a warm amber city reads as two unrelated products. The hue here is
+     the map's own, so the panels look like they belong to the world behind
+     them. Foreground is a warm off-white rather than pure white, which glares
+     at this contrast. */
+  --background: oklch(0.09 0.008 70);
+  --foreground: oklch(0.95 0.006 80);
+  --card: oklch(0.14 0.009 68);
+  --card-foreground: oklch(0.95 0.006 80);
+  --popover: oklch(0.14 0.009 68);
+  --popover-foreground: oklch(0.95 0.006 80);
+  --primary: oklch(0.93 0.006 80);
+  --primary-foreground: oklch(0.09 0.008 70);
+  --secondary: oklch(0.2 0.009 68);
+  --secondary-foreground: oklch(0.95 0.006 80);
+  --muted: oklch(0.2 0.009 68);
+  --muted-foreground: oklch(0.69 0.012 75);
+  --accent: oklch(0.24 0.011 68);
+  --accent-foreground: oklch(0.95 0.006 80);
   --destructive: oklch(0.65 0.2 22);
-  --border: oklch(1 0.003 265 / 10%);
-  --input: oklch(1 0.003 265 / 15%);
-  --ring: oklch(0.55 0.005 90);
+  --border: oklch(0.75 0.02 70 / 14%);
+  --input: oklch(0.75 0.02 70 / 18%);
+  --ring: oklch(0.62 0.03 72);
   --chart-1: oklch(0.55 0.15 260);
   --chart-2: oklch(0.7 0.14 162);
   --chart-3: oklch(0.77 0.17 70);
   --chart-4: oklch(0.6 0.2 304);
   --chart-5: oklch(0.65 0.2 16);
-  --sidebar: oklch(0.12 0.03 265);
-  --sidebar-foreground: oklch(0.993 0.003 90);
-  --sidebar-primary: oklch(0.93 0.003 90);
-  --sidebar-primary-foreground: oklch(0.08 0.04 265);
-  --sidebar-accent: oklch(0.18 0.02 265);
-  --sidebar-accent-foreground: oklch(0.993 0.003 90);
-  --sidebar-border: oklch(1 0.003 265 / 10%);
-  --sidebar-ring: oklch(0.55 0.005 90);
+  --sidebar: oklch(0.12 0.009 68);
+  --sidebar-foreground: oklch(0.95 0.006 80);
+  --sidebar-primary: oklch(0.93 0.006 80);
+  --sidebar-primary-foreground: oklch(0.09 0.008 70);
+  --sidebar-accent: oklch(0.24 0.011 68);
+  --sidebar-accent-foreground: oklch(0.95 0.006 80);
+  --sidebar-border: oklch(0.75 0.02 70 / 14%);
+  --sidebar-ring: oklch(0.62 0.03 72);
+}
+
+@layer components {
+  /* The floating panels that sit over the map.
+     There is deliberately no border. A faint light stroke around every box is
+     the stock dark-UI edge, and the first version of this drew exactly that —
+     a 1px ring mixed from --foreground, which is a near-white. What is left is
+     the pair the effect actually needs: the panel's own surface value standing
+     off the map behind it, and a one-pixel highlight along the top lip, so the
+     edge reads as a rounded surface catching light rather than as a drawn
+     outline. Kept mostly opaque: the map behind is high-contrast enough that a
+     real glass blur would band, and a bad blur is worse than none, so this
+     takes only enough translucency to feel attached to the world underneath. */
+  .map-surface {
+    background: color-mix(in oklab, var(--card) 92%, transparent);
+    backdrop-filter: blur(12px);
+    box-shadow: inset 0 1px 0
+      color-mix(in oklab, var(--foreground) 10%, transparent);
+  }
 }
 
 @layer base {

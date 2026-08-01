@@ -37,7 +37,7 @@ interface DistrictLegendProps {
 
 export function DistrictLegend({ model }: DistrictLegendProps) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1.5">
       <h2 className="font-medium text-xs">Districts</h2>
       {/*
         Each role is anchored rather than laid out by content width: the swatch
@@ -45,7 +45,7 @@ export function DistrictLegend({ model }: DistrictLegendProps) {
         like "Luxury residence" cannot shunt its count out of line with the
         rest — every row's three parts land on the same two verticals.
       */}
-      <dl className="flex flex-col gap-1.5 text-xs">
+      <dl className="flex flex-col gap-1 text-xs">
         {BUILDING_ARCHETYPES.map((archetype) => (
           <div key={archetype} className="flex items-center gap-2">
             <span

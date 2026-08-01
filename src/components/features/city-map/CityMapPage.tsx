@@ -99,7 +99,7 @@ export function CityMapPage() {
                 {state.phase === "booting"
                   ? "Starting the renderer…"
                   : busy
-                    ? `Generating — ${STAGE_NAMES[state.stageIndex] ?? "working"}`
+                    ? `Generating ${STAGE_NAMES[state.stageIndex] ?? "the city"}`
                     : "Press Generate to build a city."}
               </p>
             </div>
@@ -109,7 +109,7 @@ export function CityMapPage() {
         <div className="flex min-h-6 items-center justify-between gap-4 text-xs">
           <p className="text-muted-foreground">
             {busy
-              ? `Stage ${state.stageIndex + 1} of ${STAGE_NAMES.length} — ${STAGE_NAMES[state.stageIndex] ?? ""}`
+              ? `Stage ${state.stageIndex + 1} of ${STAGE_NAMES.length}: ${STAGE_NAMES[state.stageIndex] ?? ""}`
               : state.phase === "error"
                 ? state.lastError
                 : state.phase === "ready"

@@ -68,6 +68,217 @@ interface Runtime {
   cameraSizeM: number | null;
 }
 
+/** Radians of orbit per pixel dragged. */
+const ORBIT_RADIANS_PER_PX = 0.006;
+/** Exponent applied per unit of wheel delta, so zoom is multiplicative. */
+const ZOOM_PER_WHEEL_UNIT = 0.0012;
+/**
+ * One arrow-key press, expressed as the drag it stands in for.
+ *
+ * Defining the keyboard step in pixels rather than in radians and metres is
+ * what keeps the two input paths from drifting: both feed the same conversions
+ * below, so retuning the drag sensitivity retunes the keys with it.
+ */
+const KEY_STEP_PX = 36;
+/** One +/- press, as the wheel delta it stands in for. */
+const KEY_ZOOM_DELTA = 180;
+/** Assumed pixels per line, for wheel events reported in lines rather than pixels. */
+const LINE_HEIGHT_PX = 16;
+
+/**
+ * Drag to look, wheel to zoom, and the same two on the keyboard.
+ *
+ * `createCameras` has exposed clamped `orbit` and `pan` from the start and
+ * nothing ever called them, which left a 3D city you could not walk around and
+ * a map you could not zoom into — the generator's whole output visible only
+ * from one fixed vantage. This is the input that was missing, and it is
+ * deliberately the only motion in the scene: the camera moves because the user
+ * moved it, never on its own. An idling auto-orbit would fight the one thing a
+ * map is for, which is holding still while you read it.
+ *
+ * The arrow keys and +/- mirror the pointer exactly rather than inventing a
+ * second scheme: arrows are a drag of `KEY_STEP_PX`, +/- is a wheel notch, and
+ * both route through the same branch, so the view a keyboard user can reach is
+ * the view a mouse user can reach. Without them the camera was the one part of
+ * the app no keyboard could touch — every generation parameter is already
+ * reachable through the sidebar controls.
+ *
+ * Listeners are attached in the canvas callback ref and torn down with it, per
+ * react.md's rule for element-scoped observers. Pointer capture keeps a drag
+ * alive when the cursor leaves the canvas mid-gesture.
+ */
+const attachViewControls = (
+  canvas: HTMLCanvasElement,
+  state: Runtime
+): (() => void) => {
+  /**
+   * The gesture in progress, or `pointerId: null` for none.
+   *
+   * The id is what keeps a second simultaneous pointer from hijacking the
+   * first: without it a second finger's `pointerdown` overwrote `x`/`y`, both
+   * pointers' moves fed one pair of deltas, and lifting either one ended the
+   * gesture. Only the pointer that started the drag is listened to.
+   *
+   * `cameras` and `viewMode` are the ones the gesture began under. `moveBy`
+   * reads both live, so a swap mid-drag — a size-changing regeneration rebuilds
+   * the cameras — would apply the rest of the gesture to a different object, or
+   * turn a pan into an orbit without the pointer ever being released. Comparing
+   * against what was captured here ends the drag instead.
+   */
+  const drag = {
+    pointerId: null as number | null,
+    x: 0,
+    y: 0,
+    cameras: null as CityCameras | null,
+    viewMode: state.viewMode,
+  };
+
+  /**
+   * Metres of world per pixel of canvas, read back off the camera rather than
+   * recomputed from the extent — the ortho frustum and its zoom are the only
+   * authority on how far a drag should travel, and duplicating that maths here
+   * would drift the moment either changes.
+   */
+  const metresPerPixel = (ortho: THREE.OrthographicCamera): number =>
+    canvas.clientHeight > 0
+      ? (ortho.top - ortho.bottom) / ortho.zoom / canvas.clientHeight
+      : 0;
+
+  const onPointerDown = (event: PointerEvent): void => {
+    // Left button only. Dragging on right/middle also opened the context menu
+    // over the view it had just moved, since `contextmenu` is left alone.
+    if (event.button !== 0) return;
+    // A second pointer arriving mid-gesture is ignored rather than taking over.
+    if (drag.pointerId !== null) return;
+    drag.pointerId = event.pointerId;
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    drag.cameras = state.cameras;
+    drag.viewMode = state.viewMode;
+    canvas.setPointerCapture(event.pointerId);
+  };
+
+  /** A drag of (dx, dy) pixels, whatever produced it. */
+  const moveBy = (dx: number, dy: number): void => {
+    const cameras = state.cameras;
+    if (cameras === null) return;
+    if (state.viewMode === "3d") {
+      cameras.orbit(dx * ORBIT_RADIANS_PER_PX, dy * ORBIT_RADIANS_PER_PX, 1);
+      return;
+    }
+    // Negated so the map follows the cursor rather than fleeing it. The ortho
+    // camera's up is -z, which puts world -z at the top of the screen, so a
+    // downward drag moves the target along -z.
+    const metres = metresPerPixel(cameras.ortho);
+    cameras.pan(-dx * metres, -dy * metres, 1);
+  };
+
+  /** A wheel of `delta`, whatever produced it. */
+  const zoomBy = (delta: number): void => {
+    const cameras = state.cameras;
+    if (cameras === null) return;
+    // Multiplicative, so a zoom step feels the same at every scale.
+    const factor = Math.exp(delta * ZOOM_PER_WHEEL_UNIT);
+    // Inverted between the two: for the perspective camera the factor scales
+    // orbit *radius* (bigger is further away), for the ortho it scales
+    // magnification (bigger is closer).
+    if (state.viewMode === "3d") cameras.orbit(0, 0, factor);
+    else cameras.pan(0, 0, 1 / factor);
+  };
+
+  const endDrag = (pointerId: number): void => {
+    drag.pointerId = null;
+    drag.cameras = null;
+    if (canvas.hasPointerCapture(pointerId)) {
+      canvas.releasePointerCapture(pointerId);
+    }
+  };
+
+  const onPointerMove = (event: PointerEvent): void => {
+    if (drag.pointerId !== event.pointerId) return;
+    // The gesture's world changed underneath it; drop it rather than finish it
+    // against something the user did not start on.
+    if (state.cameras !== drag.cameras || state.viewMode !== drag.viewMode) {
+      endDrag(event.pointerId);
+      return;
+    }
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    moveBy(dx, dy);
+  };
+
+  const onPointerUp = (event: PointerEvent): void => {
+    if (drag.pointerId !== event.pointerId) return;
+    endDrag(event.pointerId);
+  };
+
+  const onWheel = (event: WheelEvent): void => {
+    // Without this the page scrolls behind the map while you try to zoom it.
+    event.preventDefault();
+    // `deltaY` is not in a fixed unit: browsers and input devices report pixels,
+    // lines, or pages, and a line is worth roughly an order of magnitude more
+    // than a pixel. Feeding the raw value to a constant tuned against pixels
+    // makes the same physical notch feel different per browser, so convert
+    // first and let `ZOOM_PER_WHEEL_UNIT` mean one thing everywhere.
+    const perLine = LINE_HEIGHT_PX;
+    const perPage =
+      canvas.clientHeight > 0 ? canvas.clientHeight : perLine * 40;
+    const scale =
+      event.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? perLine
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+          ? perPage
+          : 1;
+    zoomBy(event.deltaY * scale);
+  };
+
+  const KEY_MOVES: Readonly<Record<string, readonly [number, number]>> = {
+    ArrowLeft: [-KEY_STEP_PX, 0],
+    ArrowRight: [KEY_STEP_PX, 0],
+    ArrowUp: [0, -KEY_STEP_PX],
+    ArrowDown: [0, KEY_STEP_PX],
+  };
+  const KEY_ZOOMS: Readonly<Record<string, number>> = {
+    "+": -KEY_ZOOM_DELTA,
+    "=": -KEY_ZOOM_DELTA,
+    "-": KEY_ZOOM_DELTA,
+    _: KEY_ZOOM_DELTA,
+  };
+
+  const onKeyDown = (event: KeyboardEvent): void => {
+    // Ctrl/Cmd +/- is the browser's page zoom, which someone may be relying on
+    // to read this at all; swallowing it to move a camera is not a trade worth
+    // making. Shift is deliberately absent — `+` and `_` are shifted keys, so
+    // guarding on it would disable the very bindings this exists for.
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const move = KEY_MOVES[event.key];
+    const zoom = KEY_ZOOMS[event.key];
+    if (move === undefined && zoom === undefined) return;
+    // The arrows would otherwise scroll the page out from under the map.
+    event.preventDefault();
+    if (move !== undefined) moveBy(move[0], move[1]);
+    else zoomBy(zoom);
+  };
+
+  canvas.addEventListener("pointerdown", onPointerDown);
+  canvas.addEventListener("pointermove", onPointerMove);
+  canvas.addEventListener("pointerup", onPointerUp);
+  canvas.addEventListener("pointercancel", onPointerUp);
+  canvas.addEventListener("wheel", onWheel, { passive: false });
+  canvas.addEventListener("keydown", onKeyDown);
+
+  return () => {
+    canvas.removeEventListener("pointerdown", onPointerDown);
+    canvas.removeEventListener("pointermove", onPointerMove);
+    canvas.removeEventListener("pointerup", onPointerUp);
+    canvas.removeEventListener("pointercancel", onPointerUp);
+    canvas.removeEventListener("wheel", onWheel);
+    canvas.removeEventListener("keydown", onKeyDown);
+  };
+};
+
 /**
  * Free the current post-processing pipeline and everything hanging off it.
  *
@@ -132,6 +343,7 @@ export function SceneCanvas({
 
       const renderer = new THREE.WebGPURenderer({ canvas, antialias: true });
       renderer.setPixelRatio(Math.min(2, globalThis.devicePixelRatio || 1));
+      const detachControls = attachViewControls(canvas, state);
 
       renderer
         .init()
@@ -197,6 +409,7 @@ export function SceneCanvas({
 
       return () => {
         state.generation += 1;
+        detachControls();
         void renderer.setAnimationLoop(null);
         releasePipeline(state);
         state.scene?.dispose();
@@ -242,7 +455,16 @@ export function SceneCanvas({
 
   return (
     <div ref={attachResize} className="relative size-full overflow-hidden">
-      <canvas ref={attachCanvas} className="block size-full" />
+      {/*
+        Focusable and labelled: it is a real control, not an illustration, so it
+        has to be reachable by tab and has to say what it is when it gets there.
+      */}
+      <canvas
+        ref={attachCanvas}
+        tabIndex={0}
+        aria-label="City view. Drag or use the arrow keys to move the camera, scroll or press plus and minus to zoom."
+        className="block size-full cursor-grab touch-none outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset active:cursor-grabbing"
+      />
     </div>
   );
 }

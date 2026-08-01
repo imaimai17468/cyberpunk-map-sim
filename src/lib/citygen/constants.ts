@@ -191,8 +191,44 @@ export const LOT_TARGET_AREA_M2: Readonly<Record<DistrictKind, number>> = {
 export const LOTS = {
   cutOffsetLo: 0.42,
   cutOffsetHi: 0.58,
-  /** Closed-form count control aims the whole map at this many buildings. */
-  targetBuildingCount: 5500,
+  /**
+   * Closed-form count control target, as a density rather than a total.
+   *
+   * It was an absolute 5,500, which is only meaningful at the design's stated
+   * ~4 km² extent. `sizeM` is user-selectable from 1024 to 4096 — a 16x area
+   * range — so an absolute target made the upper clamp saturate at the larger
+   * sizes and the control stopped governing at all: 4096 m produced ~20,000
+   * buildings whether or not the overshoot correction was applied.
+   *
+   * Expressing it per km² shrinks that problem but does not remove it. The
+   * `areaScaleMin`/`areaScaleMax` clamp still saturates for some
+   * (seed, extent, cells) combinations — measured unclamped scales against the
+   * 1.8 ceiling: akiba-01 at 4096 m/256 cells = 1.8408, at 4096 m/128 = 1.9055,
+   * and at 1024 m/128 = 1.8476. So saturation is not confined to large maps.
+   * Where it saturates the closed-form control stops governing and the residual
+   * is absorbed silently; measured density stays in band regardless
+   * (~1220-1465/km² across 27 seed x extent x cells combinations), so the bound
+   * is accepted rather than eliminated. The cause is that `expected` does not
+   * grow linearly with area: akiba-01 from 2048 m to 4096 m is a 4x area
+   * increase but a 5.14x increase in `expected`.
+   *
+   * 1311.3 is exactly the previous 5,500 over the default 2048 m extent
+   * (4.194 km²) — that arithmetic alone leaves the density *target* unchanged.
+   * The default map's building count does change, because `subdivisionOvershoot`
+   * below lands in the same change: measured on akiba-01, 8,300 -> 5,706 (~31%).
+   */
+  targetBuildingDensityPerKm2: 1311.3,
+  /**
+   * How many more lots bisection actually yields than `area / targetArea`.
+   *
+   * The closed-form control divides block area by the target lot area, which
+   * would be exact if every leaf landed *on* the target. Recursive bisection
+   * instead stops once a leaf is at or under it, so leaves occupy roughly
+   * (target/2, target] and the mean sits well below the target. Measured over
+   * the three fixture seeds: 1.434, 1.330, 1.458 — mean 1.41. Without this the
+   * control predicted ~5,500 lots and produced ~8,000.
+   */
+  subdivisionOvershoot: 1.41,
   areaScaleMin: 0.6,
   areaScaleMax: 1.8,
   /** Shared boundary length, in metres, that counts as street frontage. */

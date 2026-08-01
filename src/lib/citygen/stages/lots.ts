@@ -26,7 +26,7 @@ import {
   toLineTensor,
 } from "../geometry/vec";
 import type { RngStream } from "../rng/types";
-import type { LotLayer } from "./types";
+import type { Grid, LotLayer } from "./types";
 
 /**
  * Stage 9 — closed-form building-count control followed by recursive OBB
@@ -40,6 +40,8 @@ import type { LotLayer } from "./types";
 export interface LotsInput {
   readonly blocks: readonly Block[];
   readonly blockPolygons: PolygonPool;
+  /** Map extent, so the count target scales with area rather than being fixed. */
+  readonly grid: Grid;
 }
 
 const ringFromPool = (
@@ -243,16 +245,47 @@ const baseTargetOf = (district: DistrictKind): number =>
  * having to reverse-engineer a block-area fixture that lands exactly on
  * `expected`.
  */
-export const computeAreaScale = (expected: number): number =>
+/**
+ * The predicted lot count: buildable block area over each district's unscaled
+ * target lot area. This is the quantity the closed-form control scales.
+ */
+export const expectedLotCount = (input: LotsInput): number =>
+  input.blocks
+    .filter((block) => !block.water)
+    .reduce(
+      (sum, block) =>
+        sum +
+        polygonArea(ringFromPool(input.blockPolygons, block.ringIndex)) /
+          baseTargetOf(block.district),
+      0
+    );
+
+/**
+ * The count-control ratio *before* clamping.
+ *
+ * Exposed because the clamp still saturates for some (seed, extent, cells)
+ * combinations, and when it does the closed-form control silently stops
+ * governing. The density-band test cannot see that — it only sees the outcome,
+ * which stays in band on the margin. This is what a test can assert against
+ * directly so the saturation is caught if it ever worsens.
+ */
+export const unclampedAreaScale = (expected: number, areaKm2: number): number =>
+  (expected * LOTS.subdivisionOvershoot) /
+  (LOTS.targetBuildingDensityPerKm2 * areaKm2);
+
+export const computeAreaScale = (expected: number, areaKm2: number): number =>
   Math.min(
     LOTS.areaScaleMax,
-    Math.max(LOTS.areaScaleMin, expected / LOTS.targetBuildingCount)
+    Math.max(LOTS.areaScaleMin, unclampedAreaScale(expected, areaKm2))
   );
+
+/** Map area in square kilometres, the denominator of the density target. */
+const areaKm2Of = (grid: Grid): number => (grid.sizeM * grid.sizeM) / 1_000_000;
 
 /**
  * Stage 9: assigns every buildable (non-water) block a per-district lot
  * target area — scaled once, in closed form, toward
- * `LOTS.targetBuildingCount` — then recursively bisects each block's polygon
+ * `LOTS.targetBuildingDensityPerKm2` — then recursively bisects each block's polygon
  * down to that target. Megablocks are always a single lot (design doc §6).
  */
 export const lotsStage = (input: LotsInput, stream: RngStream): LotLayer => {
@@ -260,12 +293,8 @@ export const lotsStage = (input: LotsInput, stream: RngStream): LotLayer => {
   const ringOf = (block: Block): readonly Vec2[] =>
     ringFromPool(input.blockPolygons, block.ringIndex);
 
-  const expected = buildableBlocks.reduce(
-    (sum, block) =>
-      sum + polygonArea(ringOf(block)) / baseTargetOf(block.district),
-    0
-  );
-  const areaScale = computeAreaScale(expected);
+  const expected = expectedLotCount(input);
+  const areaScale = computeAreaScale(expected, areaKm2Of(input.grid));
   const scaledTargetOf = (district: DistrictKind): number =>
     baseTargetOf(district) * areaScale;
 

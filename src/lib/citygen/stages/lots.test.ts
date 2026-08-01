@@ -6,6 +6,7 @@ import type {
   Vec2,
 } from "@/entities/city";
 import { describe, expect, it } from "vitest";
+import type { Grid } from "./types";
 import { LOTS, LOT_TARGET_AREA_M2 } from "../constants";
 import type { RngStream } from "../rng/types";
 import {
@@ -68,13 +69,40 @@ const poisonStream = (): RngStream => ({
   fork: () => poisonStream(),
 });
 
+/** Fixture extent. Only `sizeM` matters here — it sets the density denominator. */
+const TEST_GRID: Grid = { cells: 64, sizeM: 2048, cellSizeM: 32 };
+
+/** The default 2048 m extent, in square kilometres. */
+const DEFAULT_AREA_KM2 = (2048 * 2048) / 1_000_000;
+
 describe("computeAreaScale", () => {
   it.each([
     [100, LOTS.areaScaleMin],
-    [100_000, LOTS.areaScaleMax],
-    [LOTS.targetBuildingCount, 1],
-  ])("should clamp the scale when expected count is %s", (expected, scale) => {
-    expect(computeAreaScale(expected)).toBeCloseTo(scale, 6);
+    [1_000_000, LOTS.areaScaleMax],
+    // Unclamped midpoint: the expected count that exactly meets the target
+    // density over the default extent. Derived from the constants rather than
+    // written as a literal, so retuning either cannot silently pass.
+    [
+      LOTS.targetBuildingDensityPerKm2 * DEFAULT_AREA_KM2,
+      LOTS.subdivisionOvershoot,
+    ],
+  ])(
+    "should compute the area scale when expected count is %s",
+    (expected, scale) => {
+      expect(computeAreaScale(expected, DEFAULT_AREA_KM2)).toBeCloseTo(
+        scale,
+        6
+      );
+    }
+  );
+
+  /** The point of the density target: a bigger map is not a denser map. */
+  it("should return the same scale when area and expected count both quadruple", () => {
+    const base = LOTS.targetBuildingDensityPerKm2 * DEFAULT_AREA_KM2;
+    expect(computeAreaScale(base * 4, DEFAULT_AREA_KM2 * 4)).toBeCloseTo(
+      computeAreaScale(base, DEFAULT_AREA_KM2),
+      6
+    );
   });
 });
 
@@ -192,7 +220,7 @@ describe("lotsStage", () => {
     const ring = rectRing(0, 0, 300, 300);
     const blocks = [rawBlock({ id: 0, ringIndex: 0, district: "megablock" })];
     const result = lotsStage(
-      { blocks, blockPolygons: buildPolygonPool([ring]) },
+      { blocks, blockPolygons: buildPolygonPool([ring]), grid: TEST_GRID },
       poisonStream()
     );
     expect(result.lots.length).toBe(1);
@@ -206,7 +234,11 @@ describe("lotsStage", () => {
       rawBlock({ id: 1, ringIndex: 1, district: "suburb" }),
     ];
     const result = lotsStage(
-      { blocks, blockPolygons: buildPolygonPool([waterRing, suburbRing]) },
+      {
+        blocks,
+        blockPolygons: buildPolygonPool([waterRing, suburbRing]),
+        grid: TEST_GRID,
+      },
       constantStream(0.5)
     );
     expect(result.lots.every((lot) => lot.blockId === 1)).toBe(true);
@@ -218,7 +250,7 @@ describe("lotsStage", () => {
     const ring = rectRing(0, 0, targetArea, 1);
     const blocks = [rawBlock({ id: 0, ringIndex: 0, district })];
     const result = lotsStage(
-      { blocks, blockPolygons: buildPolygonPool([ring]) },
+      { blocks, blockPolygons: buildPolygonPool([ring]), grid: TEST_GRID },
       constantStream(0.5)
     );
     expect(result.lots.length).toBeGreaterThan(1);
@@ -236,7 +268,7 @@ describe("lotsStage", () => {
       }),
     ];
     const result = lotsStage(
-      { blocks, blockPolygons: buildPolygonPool([blockRing]) },
+      { blocks, blockPolygons: buildPolygonPool([blockRing]), grid: TEST_GRID },
       constantStream(0.5)
     );
     expect(result.lots.some((lot) => lot.frontage === "landlocked")).toBe(true);
@@ -246,7 +278,7 @@ describe("lotsStage", () => {
     const ring = rectRing(0, 0, 300, 300);
     const blocks = [rawBlock({ id: 0, ringIndex: 0, district: "megablock" })];
     const result = lotsStage(
-      { blocks, blockPolygons: buildPolygonPool([ring]) },
+      { blocks, blockPolygons: buildPolygonPool([ring]), grid: TEST_GRID },
       poisonStream()
     );
     expect(result.polygons.starts.length).toBe(result.lots.length + 1);

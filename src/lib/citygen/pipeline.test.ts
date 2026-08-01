@@ -5,6 +5,8 @@ import {
   type GenerationParams,
 } from "@/entities/city";
 import { generateCity, zoningStageBytes } from "./pipeline";
+import { expectedLotCount, unclampedAreaScale } from "./stages/lots";
+import { gridOf } from "./stages/types";
 import { totalInstanceCount } from "./stages/assemble";
 
 /**
@@ -152,11 +154,74 @@ describe("zoningStageBytes", () => {
  */
 describe("district coverage on fixture seeds", () => {
   it.each(["akiba-01", "akiba-02", "akiba-03"])(
-    "should place every district when generating seed %s",
+    "should place every district and land in the count band when generating seed %s",
     (seed) => {
       const generated = generateCity(params({ seed, cells: 256 }));
       const present = new Set(generated.blocks.map((b) => b.district));
-      expect(DISTRICT_KINDS.filter((k) => !present.has(k))).toEqual([]);
+      const count = generated.buildings.length;
+      // Asserted as one object so both invariants share a single pipeline run
+      // and a single expect (arch-rules/single-expect).
+      expect({
+        missing: DISTRICT_KINDS.filter((k) => !present.has(k)),
+        inBand: count >= 3000 && count <= 8000,
+      }).toEqual({ missing: [], inBand: true });
+    }
+  );
+
+  /**
+   * The count control targets a density, so the invariant that generalises is
+   * buildings per km2 — not an absolute total, which is only meaningful at the
+   * design's ~4 km2 extent. Before the target became a density this failed:
+   * the upper clamp saturated above the default size, so 4096 m produced about
+   * 20,000 buildings whether or not the overshoot correction was applied.
+   */
+  it.each([1024, 2048, 4096])(
+    "should hold the building density when the extent is %s m",
+    (sizeM) => {
+      // cells:128 — the property under test is invariance with respect to
+      // *area*, not field resolution, and 128 exercises it at a third of the
+      // cost (the suite went 7.3s -> 11.3s when this ran at 256).
+      const generated = generateCity(params({ sizeM, cells: 128 }));
+      const perKm2 = generated.buildings.length / ((sizeM * sizeM) / 1_000_000);
+      expect(perKm2 > 1000 && perKm2 < 1800).toBe(true);
+    }
+  );
+});
+
+/**
+ * Clamp-saturation guard.
+ *
+ * The count control's clamp still saturates for some (seed, extent, cells)
+ * combinations, and where it does the closed-form control stops governing and
+ * the residual is absorbed silently. The density band above cannot see that —
+ * it only sees the outcome, which stays in band on the margin, which is how
+ * this hid through two earlier fixes. This asserts the pre-clamp ratio
+ * directly, so the accepted bound is pinned and any worsening fails.
+ *
+ * Measured maximum at the time of writing: 1.9055 (akiba-01, 4096 m, 128
+ * cells). The ceiling below is that plus headroom, not an aspiration.
+ */
+describe("count-control clamp saturation", () => {
+  const MAX_ACCEPTED_UNCLAMPED = 2;
+
+  it.each([
+    ["akiba-01", 1024],
+    ["akiba-01", 4096],
+    ["akiba-02", 4096],
+    ["akiba-03", 4096],
+  ])(
+    "should keep the pre-clamp scale under the accepted bound for %s at %s m",
+    (seed, sizeM) => {
+      const generated = generateCity(params({ seed, sizeM, cells: 128 }));
+      const ratio = unclampedAreaScale(
+        expectedLotCount({
+          blocks: generated.blocks,
+          blockPolygons: generated.blockPolygons,
+          grid: gridOf(generated.params),
+        }),
+        (sizeM * sizeM) / 1_000_000
+      );
+      expect(ratio < MAX_ACCEPTED_UNCLAMPED).toBe(true);
     }
   );
 });

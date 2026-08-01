@@ -116,7 +116,7 @@ export const generateCity = (
 
   report("lots");
   const lotLayer = lotsStage(
-    { blocks: zonedBlocks, blockPolygons: blockLayer.polygons },
+    { blocks: zonedBlocks, blockPolygons: blockLayer.polygons, grid },
     streamFor("lots")
   );
 

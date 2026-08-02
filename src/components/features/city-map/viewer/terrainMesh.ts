@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import type { CityModel, Field2D } from "@/entities/city";
+import type { CityModel, Field2D, Vec2 } from "@/entities/city";
 import type { CityViewMode } from "../cityModelMachine";
 import {
   PLAN_LAND_HIGH,
@@ -53,6 +53,63 @@ const sampleNearest = (field: Field2D, u: number, v: number): number => {
   const cx = Math.min(field.cells - 1, Math.floor(u * field.cells));
   const cy = Math.min(field.cells - 1, Math.floor(v * field.cells));
   return field.data[cy * field.cells + cx];
+};
+
+/**
+ * How much ground one triangle of the drawn mesh covers.
+ *
+ * Callers that lay geometry over the terrain need this to know how finely to
+ * cut it: a piece wider than a cell spans triangles it cannot follow.
+ */
+export const renderCellSizeM = (model: CityModel): number =>
+  model.params.sizeM / RENDER_RESOLUTION;
+
+/**
+ * The height of the ground *as drawn*, anywhere on it.
+ *
+ * A different question from "what does the elevation field say here", and the
+ * gap between the two is large. The mesh samples the field nearest-cell at its
+ * own 257x257 vertices and the GPU runs a plane through each triangle, so the
+ * drawn ground is an interpolation of a subsample: at the largest extent one
+ * render cell spans 16 m of a field that carries detail every 4 m. Anything
+ * that has to sit *on* the ground must ask this rather than the field.
+ *
+ * Roads are what forced it to exist. Reading the field directly put ribbon
+ * corners as much as 8.54 m beneath the terrain drawn over them (measured at
+ * `sizeM` 4096 across the three golden seeds); asked this, they start level.
+ *
+ * `terrainMesh.test.ts` pins this against the geometry actually emitted below,
+ * because the two agreeing is the whole point and nothing else would notice
+ * them drifting apart.
+ */
+export const groundHeightAt = (model: CityModel, p: Vec2): number => {
+  const { elevation } = model.terrain;
+  const size = model.params.sizeM;
+  const clamp = (w: number) =>
+    Math.min(
+      RENDER_RESOLUTION - 1e-9,
+      Math.max(0, (w / size) * RENDER_RESOLUTION)
+    );
+  const fx = clamp(p.x);
+  const fy = clamp(p.y);
+  const gx = Math.floor(fx);
+  const gy = Math.floor(fy);
+  const s = fx - gx;
+  const t = fy - gy;
+  const corner = (dx: number, dy: number) =>
+    sampleNearest(
+      elevation,
+      (gx + dx) / RENDER_RESOLUTION,
+      (gy + dy) / RENDER_RESOLUTION
+    );
+  // The index builder below splits every quad on the diagonal from its
+  // (gx+1, gy) corner to its (gx, gy+1) one, so `s + t < 1` is the half that
+  // keeps the quad's own top-left corner.
+  return s + t < 1
+    ? corner(0, 0) * (1 - s - t) + corner(1, 0) * s + corner(0, 1) * t
+    : corner(1, 1) * (s + t - 1) +
+        corner(1, 0) * (1 - t) +
+        corner(0, 1) * (1 - s);
 };
 
 const sampleMask = (

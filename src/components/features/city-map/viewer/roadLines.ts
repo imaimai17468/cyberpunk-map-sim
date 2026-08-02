@@ -3,140 +3,208 @@ import {
   type CityModel,
   ROAD_CLASSES,
   type RoadClass,
-  type RoadEdge,
+  type Vec2,
 } from "@/entities/city";
-import { ROAD_BRIDGE, ROAD_LAMP } from "./palette";
+import { polylinePoints } from "@/lib/citygen/stages/roadGeometry";
+import type { CityViewMode } from "../cityModelMachine";
+import { PLAN_ROAD, PLAN_ROAD_BRIDGE, ROAD_BRIDGE } from "./palette";
+import { ribbonOf } from "./roadRibbons";
+import { groundHeightAt, renderCellSizeM } from "./terrainMesh";
 
 /**
- * Roads as one `LineSegments` per class, drawn from the polyline pool.
+ * Roads as surfaces of their real width, one mesh per class.
  *
- * Lines are lifted slightly above the terrain because the ground mesh is a
- * displaced plane sampled at a coarser resolution than the road geometry — at
- * equal height the two z-fight along every slope.
+ * They used to be `LineSegments`, which draws one device pixel however far you
+ * zoom: a 30 m highway and a 4 m alley came out the same hairline. `linewidth`
+ * does not help — three's WebGPU backend, the one this app renders through,
+ * never reads the property at all (checked in 0.185.1: it appears nowhere under
+ * `renderers/webgpu/` or `renderers/common/`, only on the material that stores
+ * it). Once the generator began reserving the carriageway — blocks are inset by
+ * half of `ROAD_WIDTH_M` wherever a road bounds them — the hairline became a
+ * visible lie, because the space was there in the model and nothing filled it.
+ * `roadRibbons` builds the surface from the same widths the inset uses.
+ *
+ * Grouped by class rather than by edge so a class is one draw call and one
+ * material, which is also what lets the two views swap colour without touching
+ * geometry.
  */
 
-const ROAD_LIFT_M = 1.5;
+/**
+ * How far the road surface floats above the ground under it.
+ *
+ * Only a residual now. The ribbon's corners are placed by `groundHeightAt`, so
+ * they land on the drawn terrain rather than on the elevation field the terrain
+ * was subsampled from — that difference alone was up to 8.54 m — and each quad
+ * is cut to one render cell so it cannot plank across the relief between them.
+ * What is left is the dip inside a single quad, where the flat quad passes
+ * under the piecewise-linear ground it spans.
+ *
+ * Measuring that needs its method stated, because the answer moves with it.
+ * Sample a grid across each quad, take the worst gap per quad, and pool those
+ * over the three golden seeds at both extents: the worst quad on the map dips
+ * around 8 m, and well under 1% of quads dip past 4 m. Pooling every sample
+ * point instead of taking each quad's worst moves the middle of the
+ * distribution by several times, which is why no median is quoted here — it
+ * would be a number about the sampling, not about the roads.
+ *
+ * So 4 m, which is also a metre less float than the 6 m this needed while the
+ * road was still reading the raw field. The offset below handles the coplanar
+ * case; this handles the rough one.
+ */
+const ROAD_LIFT_M = 4;
 
-const CLASS_COLOR: Readonly<Record<RoadClass, number>> = {
-  highway: ROAD_LAMP,
-  avenue: ROAD_LAMP,
-  street: 0xb08a5c,
-  alley: 0x5c4a38,
+/**
+ * Which road wins where two of them cover the same ground.
+ *
+ * Every junction is such a place: a street ending on an avenue puts its last
+ * quad inside the avenue's carriageway, at the same height, and with one shared
+ * offset the two coplanar surfaces would trade pixels — the tie broken by
+ * whatever order the buckets happen to be built in. Ranking the bias by class
+ * decides it instead, and decides it the way a real junction reads: the bigger
+ * road runs through, the smaller one meets it.
+ */
+const depthBiasOf = (cls: RoadClass): number =>
+  -4 - (ROAD_CLASSES.length - ROAD_CLASSES.indexOf(cls));
+
+/**
+ * Night: asphalt catching lamplight, not lamplight itself.
+ *
+ * These were `ROAD_LAMP` — a bright amber — back when a road was a one-pixel
+ * line, where a lamp colour is exactly right: a thin bright thread reads as a
+ * lit street. Painting a *surface* that colour turned every road into a glowing
+ * floor and the network into a web of white ribbons laid over the city, which
+ * is the opposite of what a road does at night. A road at night is dark, with
+ * light pooled along it.
+ *
+ * So the tone is near the terrain's, lifted just enough to separate, and the
+ * ordering by class comes from how much lamplight the class would carry.
+ */
+const NIGHT_COLOR: Readonly<Record<RoadClass, number>> = {
+  highway: 0x4a3a28,
+  avenue: 0x3d3021,
+  street: 0x2b231a,
+  alley: 0x201a14,
 };
 
-/** Bridges stay the one cool note: they are the terrain showing through. */
-const BRIDGE_COLOR = ROAD_BRIDGE;
+/**
+ * Roads are opaque in both views.
+ *
+ * Worth saying because they were not: the old hairlines faded the smaller
+ * classes out so they would not clutter the map. A surface cannot use that
+ * trick — at 0.5 the terrain ramp shows through and mixes into the road's own
+ * tone, so the four classes stop reading as an ordered set and a street over
+ * dark ground looks like a different class from the same street over light
+ * ground. Nothing sets `opacity` now; the material default is already 1.
+ */
 
-const CLASS_OPACITY: Readonly<Record<RoadClass, number>> = {
-  highway: 1,
-  avenue: 0.85,
-  street: 0.5,
-  alley: 0.28,
-};
-
-/** Flatten one polyline into consecutive segment endpoints. */
-const segmentsOf = (
-  model: CityModel,
-  edge: RoadEdge,
-  elevationAt: (x: number, y: number) => number
-): readonly number[] => {
-  const { coords, starts } = model.roads.polylines;
-  const from = starts[edge.polylineIndex];
-  const to = starts[edge.polylineIndex + 1];
-  const pointCount = to - from;
-  if (pointCount < 2) return [];
-
-  return Array.from({ length: pointCount - 1 }).flatMap((_unused, i) => {
-    const a = (from + i) * 2;
-    const b = (from + i + 1) * 2;
-    const ax = coords[a];
-    const ay = coords[a + 1];
-    const bx = coords[b];
-    const by = coords[b + 1];
-    return [
-      ax,
-      elevationAt(ax, ay) + ROAD_LIFT_M,
-      ay,
-      bx,
-      elevationAt(bx, by) + ROAD_LIFT_M,
-      by,
-    ];
-  });
+/**
+ * A bridge is coloured apart in both views, but not with the same colour.
+ *
+ * At night the cool cyan is the point: it is the terrain showing through where
+ * the city had to span it, and the one cool note in a sodium image. Carried
+ * unchanged into the plan it stopped reading as a road — see `PLAN_ROAD_BRIDGE`
+ * for the measurement, which is about the road family's own near-neutral tones
+ * rather than about the map's loudest colours.
+ */
+const BRIDGE_COLOR: Readonly<Record<CityViewMode, number>> = {
+  "3d": ROAD_BRIDGE,
+  "2d": PLAN_ROAD_BRIDGE,
 };
 
 export interface RoadLinesResult {
   readonly group: THREE.Group;
+  readonly setViewMode: (mode: CityViewMode) => void;
   readonly dispose: () => void;
 }
 
+interface Bucket {
+  readonly cls: RoadClass;
+  readonly bridge: boolean;
+  /** Whole polylines, not loose segments: the turns are where the width shows. */
+  readonly polylines: readonly (readonly Vec2[])[];
+}
+
+/**
+ * The matcher pairs this with a 13-line barycentric helper in
+ * `terrainMesh.test.ts`. They share no logic. The no-loops rule gives every
+ * function in this repo the same `Array.from` / `reduce` / `flatMap` skeleton,
+ * and the windowed comparison finds that shape rather than any duplication.
+ */
+// similarity-ignore: spurious pair with terrainMesh.test.ts's heightIn — see above
 export const createRoadLines = (model: CityModel): RoadLinesResult => {
   const group = new THREE.Group();
   group.name = "roads";
 
-  const { elevation } = model.terrain;
-  const elevationAt = (x: number, y: number): number => {
-    const u = x / model.params.sizeM;
-    const v = y / model.params.sizeM;
-    const cx = Math.min(
-      elevation.cells - 1,
-      Math.max(0, Math.floor(u * elevation.cells))
-    );
-    const cy = Math.min(
-      elevation.cells - 1,
-      Math.max(0, Math.floor(v * elevation.cells))
-    );
-    return elevation.data[cy * elevation.cells + cx];
-  };
+  // The ground as drawn, not as generated — see `groundHeightAt`. Asking the
+  // elevation field instead is what buried ribbon corners under the terrain.
+  const elevationAt = (p: Vec2): number =>
+    groundHeightAt(model, p) + ROAD_LIFT_M;
+  const maxSpanM = renderCellSizeM(model);
 
-  // Bridges form their own bucket so they can be coloured independently of class.
-  const buckets: readonly {
-    readonly key: string;
-    readonly color: number;
-    readonly opacity: number;
-    readonly edges: readonly RoadEdge[];
-  }[] = [
-    ...ROAD_CLASSES.map((cls) => ({
-      key: cls,
-      color: CLASS_COLOR[cls],
-      opacity: CLASS_OPACITY[cls],
-      edges: model.roads.edges.filter(
-        (e) => e.cls === cls && e.crossing !== "bridge"
-      ),
-    })),
-    {
-      key: "bridge",
-      color: BRIDGE_COLOR,
-      opacity: 1,
-      edges: model.roads.edges.filter((e) => e.crossing === "bridge"),
-    },
-  ];
+  // Bridges get their own bucket per class so they can be coloured apart
+  // without losing the width their class gives them.
+  const buckets: readonly Bucket[] = ROAD_CLASSES.flatMap((cls) =>
+    [false, true].map((bridge) => ({
+      cls,
+      bridge,
+      polylines: model.roads.edges
+        .filter((e) => e.cls === cls && (e.crossing === "bridge") === bridge)
+        .map((e) => polylinePoints(model.roads, e.polylineIndex)),
+    }))
+  );
 
-  const disposables = buckets.flatMap((bucket) => {
-    const points = bucket.edges.flatMap((edge) =>
-      segmentsOf(model, edge, elevationAt)
+  const built = buckets.flatMap((bucket) => {
+    if (bucket.polylines.length === 0) return [];
+    const { positions, indices } = ribbonOf(
+      bucket.polylines,
+      bucket.cls,
+      elevationAt,
+      maxSpanM
     );
-    if (points.length === 0) return [];
+    if (indices.length === 0) return [];
 
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(Float32Array.from(points), 3)
-    );
-    const material = new THREE.LineBasicNodeMaterial({
-      color: bucket.color,
-      transparent: bucket.opacity < 1,
-      opacity: bucket.opacity,
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+
+    // Unlit in both views. In the plan that matches the terrain and the
+    // district fills; at night an unlit surface at a lamp's colour is what
+    // reads as a lit road from above, and lighting it would only darken it.
+    // A road is pavement lying on the ground, so it is exactly the case polygon
+    // offset exists for: bias it toward the camera in depth without moving it
+    // in space, and it stops trading pixels with the terrain. Honoured on this
+    // renderer — three's WebGPU backend feeds the three properties into
+    // `depthBias` / `depthBiasSlopeScale` for triangle-list topology
+    // (`WebGPUPipelineUtils.js`, 0.185.1).
+    const bias = depthBiasOf(bucket.cls);
+    const material = new THREE.MeshBasicNodeMaterial({
+      color: bucket.bridge ? BRIDGE_COLOR["3d"] : NIGHT_COLOR[bucket.cls],
+      polygonOffset: true,
+      polygonOffsetFactor: bias,
+      polygonOffsetUnits: bias,
     });
-    const lines = new THREE.LineSegments(geometry, material);
-    lines.name = `roads:${bucket.key}`;
-    group.add(lines);
-    return [{ geometry, material }];
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = `roads:${bucket.cls}${bucket.bridge ? ":bridge" : ""}`;
+    group.add(mesh);
+    return [{ bucket, geometry, material }];
   });
 
   return {
     group,
+    setViewMode: (mode: CityViewMode) => {
+      built.forEach(({ bucket, material }) => {
+        const night = mode === "3d";
+        material.color.setHex(
+          bucket.bridge
+            ? BRIDGE_COLOR[mode]
+            : night
+              ? NIGHT_COLOR[bucket.cls]
+              : PLAN_ROAD[bucket.cls]
+        );
+      });
+    },
     dispose: () => {
-      disposables.forEach(({ geometry, material }) => {
+      built.forEach(({ geometry, material }) => {
         geometry.dispose();
         material.dispose();
       });

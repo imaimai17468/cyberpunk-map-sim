@@ -4,6 +4,7 @@ import {
   type CityModel,
 } from "@/entities/city";
 import { PLAN_ARCHETYPE } from "./viewer/palette";
+import { swatchStyle } from "./swatchStyle";
 
 /**
  * The key to the plan view's district colours.
@@ -27,10 +28,7 @@ const LABELS: Readonly<Record<BuildingArchetype, string>> = {
   slumShack: "Slum",
 };
 
-const swatchStyle = (hex: number) => ({
-  backgroundColor: `#${hex.toString(16).padStart(6, "0")}`,
-});
-
+// similarity-ignore: same shape as RoadLegendProps, kept separate on purpose — see the note there
 interface DistrictLegendProps {
   readonly model: CityModel;
 }

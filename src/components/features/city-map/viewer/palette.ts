@@ -15,7 +15,7 @@
  * Kept as linear-ish sRGB hex for three's colour management.
  */
 
-import type { BuildingArchetype } from "@/entities/city";
+import type { BuildingArchetype, RoadClass } from "@/entities/city";
 
 /** 漆黒 — the ink everything sits on. Warm-biased, never a blue charcoal. */
 export const LACQUER = 0x0b0906;
@@ -40,9 +40,69 @@ export const WATER_RIVER = 0x0a0c10;
 export const WINDOW_SODIUM = 0xffb454;
 export const WINDOW_FLUORESCENT = 0xd8e0b0;
 
-/** Road light: cooler than windows so the network reads as separate from mass. */
-export const ROAD_LAMP = 0xffd9a0;
+/**
+ * Bridges stay the one cool note in the night view: they are the terrain
+ * showing through where the city had to span it.
+ *
+ * A `ROAD_LAMP` amber used to live here for the road lines. It went when the
+ * roads became surfaces — a lamp colour on a hairline reads as a lit street,
+ * the same colour on a whole carriageway reads as a glowing floor.
+ */
 export const ROAD_BRIDGE = 0x7fd4e8;
+
+/**
+ * The same idea in the plan, at the plan's volume.
+ *
+ * `ROAD_BRIDGE` used to serve both views, and the argument against that is
+ * about the road family rather than about the map as a whole. A bridge is a
+ * road. The four road tones below sit at CIE chroma 3.4 to 7.6 — nearly
+ * neutral, deliberately — and dropping a chroma-27 cyan among them does not
+ * read as "the road that crosses the water", it reads as something that is not
+ * a road at all. (The map does hold louder colours than the cyan: the casino
+ * pink is chroma 80 and luxury residence 59. Those are buildings, and they are
+ * meant to shout. A road is not.)
+ *
+ * This halves the excursion, to chroma 17.6, while still clearing every colour
+ * on the map by at least 24.8 CIE76 — nearest is the corpo towers' teal, which
+ * no bridge is ever adjacent to. Cool, because a bridge is where the ground
+ * stopped, but blue rather than violet: an a* push is what turns a cool grey
+ * lavender, and purple is the one hue the design rules name outright.
+ */
+export const PLAN_ROAD_BRIDGE = 0x94b0cc;
+
+/**
+ * The road surface in the plan, one tone per class.
+ *
+ * Ordered by lightness, because that is the ordering the classes actually have:
+ * a highway carries more than an avenue carries more than a street. Before
+ * this, highway and avenue were the same hex separated only by opacity, so the
+ * two loudest roads on the map were indistinguishable — and `alley`, which the
+ * generator does not yet emit, had a colour waiting for it.
+ *
+ * Warm greys, not the sodium of the night lamps: in the plan a road is a
+ * surface you read the city's structure from, not a light source.
+ */
+export const PLAN_ROAD: Readonly<Record<RoadClass, number>> = {
+  // Greyer than the buildings they run between, but not grey. Two constraints
+  // pull against each other and these values are where both are satisfied.
+  //
+  // Separation: `street` must stay clear of `detachedHouse`, which is the pair
+  // that occurs most — streets cover about half the ground and detached houses
+  // are the second most common archetype. Warmer road tones collide with it.
+  //
+  // Hue: the design system allows no pure achromatic grey, and greying the
+  // roads far enough to clear the archetypes runs straight into that. Warm
+  // means R >= G >= B, not merely R > B — the weaker reading admits a mauve.
+  //
+  // What the shipped values measure, all recomputable from the hexes below:
+  // each is 8 or more warm (R - B), the classes step evenly apart at 13.6 /
+  // 14.2 / 11.7 CIE76, and the closest any road comes to any archetype is 17.3
+  // — highway against megabuilding.
+  highway: 0xb2ab9e,
+  avenue: 0x8d8880,
+  street: 0x6d6565,
+  alley: 0x514949,
+};
 
 /**
  * The plan view's ink set — a separate palette, not a brightened night one.

@@ -127,6 +127,7 @@ export const createScene = (model: CityModel): CityScene => {
     scene.backgroundNode = BACKGROUNDS[mode]();
     terrain.setViewMode(mode);
     buildings.setViewMode(mode);
+    roads.setViewMode(mode);
   };
 
   /**

@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { STAGE_NAMES } from "@/entities/city";
 import { DistrictLegend } from "./DistrictLegend";
 import { MapStatus } from "./MapStatus";
+import { RoadLegend } from "./RoadLegend";
 import { SeedControls } from "./SeedControls";
 import { ViewModeToggle } from "./ViewModeToggle";
 import { isModelStale } from "./cityModelMachine";
@@ -146,7 +147,12 @@ export function CityMapPage() {
 
             {/* The key belongs to the plan; the night view encodes district as
                 silhouette and window pattern, not as flat colour. */}
-            {state.viewMode === "2d" ? <DistrictLegend model={model} /> : null}
+            {state.viewMode === "2d" ? (
+              <>
+                <DistrictLegend model={model} />
+                <RoadLegend model={model} />
+              </>
+            ) : null}
           </div>
         ) : null}
       </aside>

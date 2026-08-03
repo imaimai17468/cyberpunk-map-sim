@@ -8,7 +8,11 @@ import type {
   TerrainLayer,
   Vec2,
 } from "@/entities/city";
-import { WATER_CLASSES } from "@/entities/city";
+import {
+  type DiscardObserver,
+  ROAD_CLASSES,
+  WATER_CLASSES,
+} from "@/entities/city";
 import { ANCHORS, ARTERIALS } from "../constants";
 import {
   candidateSegmentPairs,
@@ -625,7 +629,38 @@ export const buildAugmentedVertices = (
   });
 };
 
-/** Splits an augmented vertex list into one polyline per pair of break points. */
+/**
+ * How far apart two positions must be to count as a road rather than a point.
+ *
+ * Well under the 0.25 m lattice `resolveNodeId` snaps to, so anything this
+ * rejects would have collapsed onto one node anyway.
+ */
+const DEGENERATE_EDGE_M = 1e-6;
+
+/**
+ * Splits an augmented vertex list into one polyline per pair of break points.
+ *
+ * Pieces with no length are dropped, and that is not a tidiness measure. Every
+ * Dijkstra path leaves the CBD, so every run's own start break lands on top of
+ * a crossing insertion with every other run — two break points at one position,
+ * with nothing between them. Splitting there yielded an edge whose ends
+ * `buildRoadGraph` resolved to the same node: on `akiba-01` at `sizeM` 2048
+ * and 512 cells, 169 of the 257 pieces this function produced had no length,
+ * each a two-point polyline of one repeated coordinate classed highway or
+ * avenue. (170 edges in that graph joined a node to itself; the odd one out is
+ * a real loop with extent, which the length test below deliberately keeps.)
+ *
+ * They are not harmless. They bound no block, so they inflate every count taken
+ * off `roads.edges`; and a zero-length edge hands `comparePseudoAngle` a zero
+ * vector, whose cross product against anything is zero, so the planar face
+ * traversal has no angle to order the half-edges at that node by and falls
+ * through to a tie-break that means nothing geometrically.
+ *
+ * The test is total length rather than "do the two ends coincide", so a piece
+ * that genuinely returns to where it started while enclosing real ground
+ * survives. Nothing produces one today — these are shortest paths — but the
+ * weaker test would silently delete it if anything ever did.
+ */
 export const splitIntoEdgeVertexLists = (
   augmented: readonly AugmentedPoint[]
 ): readonly (readonly Vec2[])[] => {
@@ -636,6 +671,13 @@ export const splitIntoEdgeVertexLists = (
     .slice(0, -1)
     .map((start, k) =>
       augmented.slice(start, breakIndices[k + 1] + 1).map((p) => p.pos)
+    )
+    .filter((vertices) =>
+      vertices.some(
+        (v) =>
+          Math.abs(v.x - vertices[0].x) > DEGENERATE_EDGE_M ||
+          Math.abs(v.y - vertices[0].y) > DEGENERATE_EDGE_M
+      )
     );
 };
 
@@ -693,6 +735,51 @@ const buildPolylinePool = (
   return { coords, starts: Uint32Array.from(starts) };
 };
 
+/**
+ * One edge per stretch of road, not one per path that used it.
+ *
+ * The Dijkstra families all leave the CBD, so the trunk out of it is walked by
+ * many paths and each contributes its own copy after splitting: on `akiba-01`,
+ * 35 of 88 arterials were byte-identical duplicates of another edge between the
+ * same two nodes. Duplicates are worse than redundant — two coincident edges
+ * leave the same node at the same angle, so `comparePseudoAngle` cannot order
+ * their half-edges and the face traversal walks whichever the tie-break
+ * happens to name.
+ *
+ * The survivor keeps the strongest class present, because a stretch carrying
+ * both a highway and an avenue is a highway, and any bridge marking, because a
+ * crossing does not stop being one for having been found twice.
+ */
+/** A route and its reverse are the same road, so the key must not care. */
+const routeKey = (e: EdgeData): string => {
+  const fwd = e.vertices.map((p) => `${p.x},${p.y}`).join("|");
+  const rev = e.vertices
+    .toReversed()
+    .map((p) => `${p.x},${p.y}`)
+    .join("|");
+  return fwd < rev ? fwd : rev;
+};
+
+const dedupeCoincident = (
+  edgesData: readonly EdgeData[]
+): readonly EdgeData[] => {
+  const merged = edgesData.reduce<Map<string, EdgeData>>((acc, e) => {
+    const k = routeKey(e);
+    const seen = acc.get(k);
+    if (seen === undefined) return acc.set(k, e);
+    return acc.set(k, {
+      vertices: seen.vertices,
+      cls:
+        ROAD_CLASSES.indexOf(e.cls) < ROAD_CLASSES.indexOf(seen.cls)
+          ? e.cls
+          : seen.cls,
+      crossing: seen.crossing === "bridge" ? seen.crossing : e.crossing,
+      strip: seen.strip || e.strip,
+    });
+  }, new Map());
+  return [...merged.values()];
+};
+
 const buildRoadGraph = (edgesData: readonly EdgeData[]): RoadGraph => {
   const registry: NodeRegistry = { byKey: new Map(), nodes: [] };
   const edges: RoadEdge[] = edgesData.map((e, id) => ({
@@ -716,22 +803,46 @@ const buildRoadGraph = (edgesData: readonly EdgeData[]): RoadGraph => {
  * `arterialsStage` so the planarization step itself is unit-testable
  * without a full Dijkstra run.
  */
-export const planarizeArterials = (runs: readonly FamilyRun[]): RoadGraph => {
+export const planarizeArterials = (
+  runs: readonly FamilyRun[],
+  observe: DiscardObserver = () => undefined
+): RoadGraph => {
   const { segments, meta } = buildGlobalSegments(runs);
   const insertionsByRun = findInsertions(runs, segments, meta);
-  const edgesData = runs.flatMap((run, runIndex) => {
+  const perRun = runs.map((run, runIndex) => {
     const insertions = insertionsByRun.get(runIndex) ?? [];
     const augmented = buildAugmentedVertices(run, insertions);
-    return splitIntoEdgeVertexLists(augmented).map(
+    const breaks = augmented.filter((p) => p.isBreak).length;
+    const kept = splitIntoEdgeVertexLists(augmented);
+    return { run, kept, dropped: Math.max(0, breaks - 1) - kept.length };
+  });
+  const edgesData = perRun.flatMap(({ run, kept }) =>
+    kept.map(
       (vertices): EdgeData => ({
         vertices,
         cls: run.cls,
         crossing: run.crossing,
         strip: run.strip,
       })
-    );
-  });
-  return buildRoadGraph(edgesData);
+    )
+  );
+  const zeroLength = perRun.reduce((n, r) => n + r.dropped, 0);
+  if (zeroLength > 0) {
+    observe({
+      stage: "arterials",
+      reason: "zero-length-edge",
+      count: zeroLength,
+    });
+  }
+  const deduped = dedupeCoincident(edgesData);
+  if (deduped.length !== edgesData.length) {
+    observe({
+      stage: "arterials",
+      reason: "duplicate-route",
+      count: edgesData.length - deduped.length,
+    });
+  }
+  return buildRoadGraph(deduped);
 };
 
 const buildAllRawPaths = (
@@ -757,12 +868,13 @@ const buildAllRawPaths = (
  */
 export const arterialsStage: Stage<ArterialsInput, RoadGraph> = (
   input,
-  _stream: RngStream
+  _stream: RngStream,
+  observe: DiscardObserver = () => undefined
 ) => {
   const costField = buildArterialCostField(input.terrain, input.derived);
   const allPaths = buildAllRawPaths(input, costField);
   const runs = allPaths.flatMap((path, pathIndex) =>
     buildFamilyRuns(path, pathIndex, input.grid, input.terrain.waterMask)
   );
-  return planarizeArterials(runs);
+  return planarizeArterials(runs, observe);
 };

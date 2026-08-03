@@ -1,5 +1,6 @@
 import type {
   BoundaryRef,
+  DiscardObserver,
   Field2D,
   PolygonPool,
   RoadEdge,
@@ -18,6 +19,7 @@ import { minimumAreaObb } from "../geometry/hull";
 import {
   area,
   centroid,
+  isSelfIntersecting,
   samplePolygonInteriorPoints,
   splitPolygon,
 } from "../geometry/polygon";
@@ -511,7 +513,8 @@ const streetEdgesOf = (
 
 export const blocksStage = (
   input: BlocksInput,
-  stream: RngStream
+  stream: RngStream,
+  observe: DiscardObserver = () => undefined
 ): BlockLayer => {
   const { nodes, edges } = buildFaceGraph(input.roads, input.grid);
   const arterialEdgeIds = new Set(input.roads.edges.map((e) => e.id));
@@ -542,9 +545,40 @@ export const blocksStage = (
     }))
     .filter((region) => region.ring.length >= 3);
 
-  const leaves = regions.flatMap((region) =>
+  /**
+   * A folded ring is not a block, so it does not become one.
+   *
+   * The face traversal can hand back a self-crossing cycle where the arterial
+   * graph is degenerate — a zero-length edge, or two edges leaving a node along
+   * the same bearing, both of which give `comparePseudoAngle` nothing to order
+   * by. Subdivision then cuts that fold into leaves that are folded too.
+   *
+   * The area floor does not stop them: a bowtie's two lobes contribute opposite
+   * signs to the shoelace sum, so a fold can report a healthy positive area
+   * while enclosing nothing of the kind. `lots.ts` does reject what it finds,
+   * but only after insetting, and only for the ones whose inset also folds — by
+   * then `zoning` has already scored the block from a centroid that can sit
+   * outside it. On `main` at the golden parameters this let 7 folded blocks
+   * through on `akiba-02` and 1 on `akiba-03` — counted under vitest, which is
+   * the engine the goldens are taken with. A `bun` script reports different
+   * numbers here; ADR-0027 calls cross-engine reproducibility "designed for but
+   * only opportunistically tested" and this is one of the places it is not.
+   *
+   * Filtered here, before `adjacencyOf` and the ring pool, because every id
+   * downstream is an index into this array: dropping a leaf later would leave
+   * `neighbourIds` pointing at whatever slid into its place.
+   */
+  const cut = regions.flatMap((region) =>
     subdivide(region.ring, region.refs, 0, ctx)
   );
+  const leaves = cut.filter((leaf) => !isSelfIntersecting(leaf.ring));
+  if (leaves.length !== cut.length) {
+    observe({
+      stage: "blocks",
+      reason: "folded-block",
+      count: cut.length - leaves.length,
+    });
+  }
   const neighbours = adjacencyOf(leaves);
 
   const water = leaves.map((leaf) => isWaterBlock(leaf.ring, input));

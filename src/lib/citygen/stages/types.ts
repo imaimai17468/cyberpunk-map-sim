@@ -2,6 +2,7 @@ import type {
   Anchor,
   Block,
   Building,
+  DiscardObserver,
   Field2D,
   FieldStack,
   GenerationParams,
@@ -109,8 +110,17 @@ export interface PipelineContext {
   readonly fields: FieldStack;
 }
 
-/** Every stage has this shape: declared inputs, its own stream, pure output. */
+/**
+ * Every stage has this shape: declared inputs, its own stream, pure output.
+ *
+ * `observe` is how a stage says what it threw away. It returns `void` and the
+ * stage never reads it back, so a stage's output cannot depend on whether
+ * anyone is listening — see `DiscardObserver`. Optional at both ends: a stage
+ * that discards nothing omits the parameter, and a caller that is not watching
+ * omits the argument.
+ */
 export type Stage<TInput, TOutput> = (
   input: TInput,
-  stream: RngStream
+  stream: RngStream,
+  observe?: DiscardObserver
 ) => TOutput;

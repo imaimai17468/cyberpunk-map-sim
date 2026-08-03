@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   DISTRICT_KINDS,
   type DistrictKind,
+  type Discard,
   type GenerationParams,
+  type PolygonPool,
+  type Vec2,
 } from "@/entities/city";
+import { isSelfIntersecting } from "./geometry/polygon";
 import { GOLDEN_CITIES, GOLDEN_PARAMS } from "./golden";
 import { generateCity, zoningStageBytes } from "./pipeline";
 import { expectedLotCount, unclampedAreaScale } from "./stages/lots";
@@ -237,6 +241,16 @@ describe("count-control clamp saturation", () => {
  * upstream one. The whole-model hash is asserted separately so a serialisation
  * change that leaves every stage intact still fails.
  */
+/** The ring the pool holds at `index`, as points. */
+const ringAt = (pool: PolygonPool, index: number): readonly Vec2[] => {
+  const start = pool.starts[index];
+  const end = pool.starts[index + 1];
+  return Array.from({ length: end - start }, (_value, i) => ({
+    x: pool.coords[(start + i) * 2],
+    y: pool.coords[(start + i) * 2 + 1],
+  }));
+};
+
 describe("golden hashes", () => {
   // Memoised: the stage-hash and content-hash assertions are separate tests
   // (single-expect), but they should not pay for two generations per seed.
@@ -267,6 +281,95 @@ describe("golden hashes", () => {
     "should reproduce the content hash when generating seed %s",
     (seed) => {
       expect(goldenFor(seed).contentHash).toBe(GOLDEN_CITIES[seed].contentHash);
+    }
+  );
+
+  /**
+   * A block ring that crosses itself is not a shape anything downstream can
+   * reason about: its shoelace area can come out positive while the polygon is
+   * folded, so it passes the area floor, and `zoning` then scores a district
+   * from a centroid that is outside it. `lots.ts` checks the *inset* ring and
+   * rejects what it finds, but that is a late and partial catch — the fold has
+   * already decided which district the block is.
+   *
+   * Asserted here rather than in `blocks.test.ts` because the folds only appear
+   * for real arterial graphs; that file's only `RoadGraph` fixture has no edges
+   * at all, so subdivision there never sees a face with the topology that
+   * produces one.
+   */
+  /**
+   * The observer is the one thing injected into a pure engine, so the property
+   * that keeps ADR-0027 true is that attaching one changes nothing. It holds
+   * because `DiscardObserver` returns `void` and no stage reads it back — but
+   * that is a claim about every call site, and a call site could start reading
+   * a return value without any type error. This is what would catch that.
+   */
+  it("should produce identical output when an observer is attached", () => {
+    const seen: Discard[] = [];
+    const watched = generateCity(
+      params({ seed: "akiba-02", ...GOLDEN_PARAMS }),
+      {
+        onDiscard: (d) => seen.push(d),
+      }
+    );
+    const unwatched = generateCity(
+      params({ seed: "akiba-02", ...GOLDEN_PARAMS })
+    );
+    // The second element is what stops this passing vacuously: a seed whose
+    // engine never calls the observer would prove nothing about attaching one.
+    expect([watched.contentHash, seen.length > 0]).toEqual([
+      unwatched.contentHash,
+      true,
+    ]);
+  });
+
+  /**
+   * Pinned as exact counts, not "at least one". These are the numbers a reader
+   * would otherwise go and measure, and a measurement written from outside the
+   * engine is how several wrong figures got into this repo — it reconstructs a
+   * decision instead of asking about it. Fixing the counts here means the
+   * engine's answer and the committed answer cannot drift apart silently.
+   *
+   * Taken under vitest, which is what asserts them. A script run under bun
+   * reports 2 folded blocks here rather than 7 — ADR-0027 calls cross-engine
+   * reproducibility "designed for but only opportunistically tested", and this
+   * is what that costs in practice. Regenerate these the same way the goldens
+   * are regenerated, from inside the test runner, or the numbers will disagree
+   * with the runner that checks them.
+   */
+  it("should report every discard it made when one is observed", () => {
+    const seen: Discard[] = [];
+    generateCity(params({ seed: "akiba-02", ...GOLDEN_PARAMS }), {
+      onDiscard: (d) => seen.push(d),
+    });
+    expect(seen).toEqual([
+      { stage: "arterials", reason: "zero-length-edge", count: 259 },
+      { stage: "arterials", reason: "duplicate-route", count: 58 },
+      { stage: "blocks", reason: "folded-block", count: 7 },
+    ]);
+  });
+
+  it("should report nothing it did not discard when one is observed", () => {
+    const seen: Discard[] = [];
+    generateCity(params({ seed: "akiba-01", ...GOLDEN_PARAMS }), {
+      onDiscard: (d) => seen.push(d),
+    });
+    // This seed folds no block at this grid, so no folded-block line appears.
+    expect(seen.map((d) => d.reason)).toEqual([
+      "zero-length-edge",
+      "duplicate-route",
+    ]);
+  });
+
+  it.each(Object.keys(GOLDEN_CITIES))(
+    "should leave no self-intersecting block ring when generating seed %s",
+    (seed) => {
+      const model = goldenFor(seed);
+      expect(
+        model.blocks.filter((block) =>
+          isSelfIntersecting(ringAt(model.blockPolygons, block.ringIndex))
+        )
+      ).toEqual([]);
     }
   );
 });

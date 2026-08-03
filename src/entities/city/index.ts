@@ -233,6 +233,55 @@ export const STAGE_NAMES = [
 /** @public published domain vocabulary: consumers narrow on this union even where the first slice does not, and it is the name a new member is added to */
 export type StageName = (typeof STAGE_NAMES)[number];
 
+/**
+ * The things the engine throws away, named.
+ *
+ * Every stage drops something — a polyline vertex that repeats its
+ * predecessor, a road with no length, a block ring that crosses itself. Those
+ * decisions used to leave no trace, so counting them meant reconstructing them
+ * from the output, and a reconstruction that disagrees with the engine is just
+ * a wrong number that looks like a measurement. Naming them here makes the
+ * engine the one that answers.
+ *
+ * A union rather than a free string because a consumer should be able to
+ * narrow on it exhaustively, and because a new reason has one place to be
+ * added and every switch over it then fails to compile until it is handled.
+ *
+ * @public the const array is the single source of the union below; exported so
+ * a diagnostics reader can enumerate every reason without hard-coding the list,
+ * and so a new member fails every exhaustive `Record` over it until handled
+ */
+export const DISCARD_REASONS = [
+  /** Two consecutive polyline points at the same position. */
+  "duplicate-vertex",
+  /** A road whose ends coincide, so it has no direction and bounds nothing. */
+  "zero-length-edge",
+  /** A second edge tracing a stretch of road another edge already traced. */
+  "duplicate-route",
+  /** A block ring that crosses itself, whose area and centroid mean nothing. */
+  "folded-block",
+] as const;
+/** @public published domain vocabulary: the name a new discard reason is added to */
+export type DiscardReason = (typeof DISCARD_REASONS)[number];
+
+/** One stage's tally of one kind of discard. */
+export interface Discard {
+  readonly stage: StageName;
+  readonly reason: DiscardReason;
+  readonly count: number;
+}
+
+/**
+ * How the engine reports what it discarded.
+ *
+ * Returns `void`, and the engine never reads anything back — that is the whole
+ * contract. An observer cannot steer generation, so attaching one cannot change
+ * a single byte of the output, which `pipeline.test.ts` asserts by generating
+ * the same seed with and without one and comparing the content hash. ADR-0027's
+ * determinism survives injection only because the arrow points one way.
+ */
+export type DiscardObserver = (discard: Discard) => void;
+
 export interface CityModel {
   readonly params: GenerationParams;
   readonly terrain: TerrainLayer;

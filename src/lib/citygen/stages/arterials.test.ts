@@ -357,6 +357,54 @@ describe("splitIntoEdgeVertexLists", () => {
     ];
     expect(splitIntoEdgeVertexLists(augmented).length).toBe(2);
   });
+
+  /**
+   * Every Dijkstra path leaves the CBD, so every run's own start break sits on
+   * top of a crossing insertion with every other run — two break points at one
+   * position. Splitting between them once produced a zero-length edge, and
+   * `buildRoadGraph` resolved both of its ends to the same node: on `akiba-01`
+   * at 512 cells, 169 of the 257 pieces produced had no length. They bound
+   * nothing, and they hand `comparePseudoAngle` a zero vector, which leaves the
+   * face traversal with no angle to sort them by.
+   */
+  it("should drop the piece when two break points share a position", () => {
+    const augmented = [
+      { pos: { x: 0, y: 0 }, isBreak: true },
+      { pos: { x: 0, y: 0 }, isBreak: true },
+      { pos: { x: 10, y: 0 }, isBreak: true },
+    ];
+    expect(splitIntoEdgeVertexLists(augmented).length).toBe(1);
+  });
+
+  it("should keep the surviving piece intact when a duplicate break is dropped", () => {
+    const augmented = [
+      { pos: { x: 0, y: 0 }, isBreak: true },
+      { pos: { x: 0, y: 0 }, isBreak: true },
+      { pos: { x: 10, y: 0 }, isBreak: true },
+    ];
+    expect(splitIntoEdgeVertexLists(augmented)[0]).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+    ]);
+  });
+
+  it("should drop a piece when its interior points all sit on its endpoints", () => {
+    const augmented = [
+      { pos: { x: 4, y: 4 }, isBreak: true },
+      { pos: { x: 4, y: 4 }, isBreak: false },
+      { pos: { x: 4, y: 4 }, isBreak: true },
+    ];
+    expect(splitIntoEdgeVertexLists(augmented).length).toBe(0);
+  });
+
+  it("should keep a piece when it returns to its start but encloses real length", () => {
+    const augmented = [
+      { pos: { x: 0, y: 0 }, isBreak: true },
+      { pos: { x: 50, y: 30 }, isBreak: false },
+      { pos: { x: 0, y: 0 }, isBreak: true },
+    ];
+    expect(splitIntoEdgeVertexLists(augmented).length).toBe(1);
+  });
 });
 
 describe("planarizeArterials", () => {

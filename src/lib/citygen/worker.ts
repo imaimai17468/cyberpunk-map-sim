@@ -49,8 +49,10 @@ self.addEventListener("message", (event: MessageEvent<unknown>) => {
   }
 
   try {
-    const model = generateCity(parsed.data, (stageIndex) => {
-      post({ kind: "progress", requestId, stageIndex });
+    const model = generateCity(parsed.data, {
+      onProgress: (stageIndex) => {
+        post({ kind: "progress", requestId, stageIndex });
+      },
     });
     post({ kind: "success", requestId, model });
   } catch (cause: unknown) {

@@ -1,6 +1,7 @@
 import {
   type CityModel,
   DISTRICT_KINDS,
+  type DiscardObserver,
   type DistrictKind,
   type FieldStack,
   type GenerationParams,
@@ -32,9 +33,25 @@ import { zoningStage } from "./stages/zoning";
  * divergent stage rather than just reporting that the city changed.
  */
 
-export type ProgressCallback = (stageIndex: number) => void;
+/** Internal: `GenerateOptions` is the surface a caller names. */
+type ProgressCallback = (stageIndex: number) => void;
 
 const noop: ProgressCallback = () => undefined;
+const ignore: DiscardObserver = () => undefined;
+
+/**
+ * Everything the caller may watch, none of which it may steer.
+ *
+ * An object rather than more positional callbacks because a third thing to
+ * observe is one field away, and because `generateCity(params, fn)` gave no
+ * hint which callback `fn` was. Both default to doing nothing, so the engine
+ * runs identically whether anyone is listening.
+ */
+export interface GenerateOptions {
+  readonly onProgress?: ProgressCallback;
+  /** See `DiscardObserver`: the engine calls this and never reads it back. */
+  readonly onDiscard?: DiscardObserver;
+}
 
 /**
  * Canonical bytes for the zoning stage: one district *index* per block.
@@ -59,8 +76,10 @@ const fieldBytes = (data: Float32Array): Uint8Array =>
 
 export const generateCity = (
   rawParams: GenerationParams,
-  onProgress: ProgressCallback = noop
+  options: GenerateOptions = {}
 ): CityModel => {
+  const onProgress = options.onProgress ?? noop;
+  const onDiscard = options.onDiscard ?? ignore;
   // The schema is the boundary: a caller (or a postMessage) cannot smuggle an
   // out-of-range grid past this point.
   const params = generationParamsSchema.parse(rawParams);
@@ -102,13 +121,15 @@ export const generateCity = (
   report("arterials");
   const roads = arterialsStage(
     { grid, terrain, derived, anchors: anchorSet },
-    streamFor("arterials")
+    streamFor("arterials"),
+    onDiscard
   );
 
   report("blocks");
   const blockLayer = blocksStage(
     { grid, terrain, derived, social: socialFields, roads },
-    streamFor("blocks")
+    streamFor("blocks"),
+    onDiscard
   );
 
   report("zoning");

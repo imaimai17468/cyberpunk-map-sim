@@ -307,7 +307,11 @@ describe("blocksStage", () => {
  *
  * A loop rather than a crossing pair because the border rectangle is unioned
  * into the face graph without being joined to the arterials, so arterials only
- * enclose a face where they close one among themselves.
+ * enclose a face where they close one among themselves. That also makes this
+ * loop its own connected component, which is why it bounds exactly one block:
+ * its reversed boundary is an outer face, and `traverseFaces` flags one of
+ * those per component. It used to bound two — the reversed one came back
+ * inside-out as a second block of the same shape.
  *
  * The loop's face is 7,600 m² against `BLOCKS.maxBlockAreaM2` of 9,000, so it
  * is never subdivided and the block ring is the traversed face ring itself.
@@ -353,7 +357,10 @@ const loopRoads = (westSide: readonly number[]): RoadGraph => {
   };
 };
 
-/** The rings of every block the loop bounds, which is where the bend lands. */
+/**
+ * The rings of every block the loop bounds — one, and asserted as one below,
+ * since a list is what catches the reversed second block coming back.
+ */
 const arterialRingsOf = (
   westSide: readonly number[]
 ): readonly (readonly Vec2[])[] => {
@@ -392,24 +399,23 @@ describe("blocksStage with a bending arterial", () => {
   const BOWED = [200, 280, BEND.x, BEND.y, 200, 200];
 
   /**
-   * Both this test and the repeated-vertex one below assert per ring rather than
-   * over a filtered-down list, so that the ring count is pinned by the same
-   * expectation. Asserting "nothing lacks the bend" would also hold of no rings
-   * at all, and a regression that stopped the loop bounding anything — in the
-   * boundary-kind classification `arterialRingsOf` filters on, or in which face
-   * `withOuterFlag` calls outer — would empty the list rather than change a
-   * ring. `single-expect` is why this is one expectation and not two.
+   * Every assertion here maps over the ring list rather than reducing it to one
+   * ring, so the count is pinned by the same expectation as the content. Two
+   * regressions empty or grow that list rather than changing a ring: the
+   * boundary-kind classification `arterialRingsOf` filters on, and which faces
+   * `withOuterFlag` calls outer — the second is why the expected length is one
+   * and not two. `single-expect` is why each is one expectation, not two.
    */
   it("should carry the bend into every ring the loop bounds when an arterial bends", () => {
     expect(
       arterialRingsOf(BOWED).map((ring) =>
         ring.some((p) => p.x === BEND.x && p.y === BEND.y)
       )
-    ).toEqual([true, true]);
+    ).toEqual([true]);
   });
 
   it("should bound the loop by a ring of five vertices when one side bends", () => {
-    expect(arterialRingsOf(BOWED).map((ring) => ring.length)).toEqual([5, 5]);
+    expect(arterialRingsOf(BOWED).map((ring) => ring.length)).toEqual([5]);
   });
 
   /**
@@ -418,10 +424,7 @@ describe("blocksStage with a bending arterial", () => {
    * have the lot layer inset for a road that is not in the graph.
    */
   it("should name the road on both links when one arterial is chained", () => {
-    expect(arterialRefsOf(BOWED)).toEqual([
-      [0, 1, 2, 3, 3],
-      [0, 1, 2, 3, 3],
-    ]);
+    expect(arterialRefsOf(BOWED)).toEqual([[0, 1, 2, 3, 3]]);
   });
 
   /**
@@ -441,7 +444,7 @@ describe("blocksStage with a bending arterial", () => {
       200,
       200,
     ]);
-    expect([rings.length, ...rings]).toEqual([2, ...arterialRingsOf(BOWED)]);
+    expect([rings.length, ...rings]).toEqual([1, ...arterialRingsOf(BOWED)]);
   });
 });
 

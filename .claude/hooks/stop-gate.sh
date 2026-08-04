@@ -111,18 +111,21 @@ if [ "$CODE_CHANGED" -gt 0 ]; then
 
   KNIP_HAS=$(printf '%s' "$KNIP" | grep -cE '^(Unused |Duplicate |Configuration |Unresolved )' || true)
 
+  # Counted by scripts/similarity-unignored.sh, where the two rules that decide
+  # it are tested against fixtures. Both were wrong while this was inline here.
+  #
+  # The whole report is handed over rather than gated on a summary line first:
+  # the guard used to key on `Total similar (type pairs|functions) found: [1-9]`,
+  # and similarity-ts 0.4.1 prints that wording for types only — the function
+  # section says `Found N duplicate pairs`. So a tree with function duplicates
+  # and no similar types skipped the loop entirely and the gate called it clean.
+  # Verified on 2026-08-04 against a two-file fixture holding one real 90.98%
+  # pair and no type definitions: the old guard did not match, the script
+  # reports both locations.
   SIM_UNIGNORED=0
-  if printf '%s' "$SIM" | grep -qE 'Total similar (type pairs|functions) found: [1-9]'; then
-    while IFS= read -r loc; do
-      file=$(printf '%s' "$loc" | sed 's/\.\///' | cut -d: -f1)
-      line=$(printf '%s' "$loc" | cut -d: -f2)
-      prev=$((line - 1))
-      if [ "$prev" -ge 1 ] && [ -f "$file" ]; then
-        prev_content=$(sed -n "${prev}p" "$file")
-        case "$prev_content" in *similarity-ignore*) continue ;; esac
-      fi
-      SIM_UNIGNORED=$((SIM_UNIGNORED + 1))
-    done <<< "$(printf '%s' "$SIM" | grep -oE '\./[^ ]+:[0-9]+' | sort -u)"
+  if [ -n "$SIM" ]; then
+    SIM_UNIGNORED=$(printf '%s\n' "$SIM" |
+      bash "$ROOT/scripts/similarity-unignored.sh" | wc -l | tr -d ' ')
   fi
 
   if [ "$KNIP_HAS" -gt 0 ] || [ "$SIM_UNIGNORED" -gt 0 ]; then
@@ -132,7 +135,10 @@ if [ "$CODE_CHANGED" -gt 0 ]; then
     # chasing findings the gate already accepted.
     KNIP_SUM=$(printf '%s' "$KNIP" | grep -E '^(Unused |Duplicate |Configuration |Unresolved )' | tr '\n' ' ' || true)
     SIM_SUM=""
-    [ "$SIM_UNIGNORED" -gt 0 ] && SIM_SUM=$(printf '%s' "$SIM" | grep -oE 'Total similar type pairs found: [0-9]+|Total similar functions found: [0-9]+' | tr '\n' ' ' || true)
+    # `Found N duplicate pairs` is the function section's wording; the two
+    # `Total similar ...` lines are the type ones. Naming a total that
+    # similarity-ts never prints reported nothing for a function-only report.
+    [ "$SIM_UNIGNORED" -gt 0 ] && SIM_SUM=$(printf '%s' "$SIM" | grep -oE 'Found [0-9]+ duplicate pairs|Total similar type( literal)? pairs found: [0-9]+' | tr '\n' ' ' || true)
     SUM=""
     [ "$KNIP_HAS" -gt 0 ] && [ -n "$KNIP_SUM" ] && SUM="knip: ${KNIP_SUM}"
     if [ -n "$SIM_SUM" ]; then

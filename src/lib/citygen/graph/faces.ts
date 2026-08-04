@@ -8,11 +8,14 @@ import type { Vec2 } from "@/entities/city";
  * rotation by *pseudo-angle* — a comparison-only stand-in for the true
  * angle, built from a half-plane split plus a cross-product comparison, so
  * no `atan2` (or any transcendental) is ever called. Walking `next` around
- * that rotation traces every face of the embedding, including exactly one
- * outer (unbounded) face, which is identified by its reversed orientation:
- * the single face whose shoelace signed area is negative — and, for a
- * connected embedding, therefore also the largest by absolute area, since it
- * encloses everything the bounded faces partition.
+ * that rotation traces every face of the embedding, outer faces included.
+ * An outer face is identified by its reversed orientation — a negative
+ * shoelace signed area — and there is one per connected component, so a
+ * connected embedding has exactly one and it is also the largest by absolute
+ * area, since it encloses everything the bounded faces partition. A graph in
+ * several pieces has one per piece and no single largest; `isOuter` is
+ * therefore the test to use, and `outerFaceIndex` names only the most
+ * negative of them.
  *
  * `geometry/vec.ts` (owned by another concurrent agent) is deliberately not
  * imported here; the small vector/angle helpers below are local and will be
@@ -234,6 +237,23 @@ const toFace = (
   };
 };
 
+/**
+ * Flags every reversed face as outer, which is one per connected component.
+ *
+ * It used to flag only the most negative one. That is correct for a connected
+ * embedding and wrong for any other: the walk visits each component separately
+ * and each hands back its own boundary reversed, so with two components one
+ * reversed boundary was left looking like an ordinary face. `blocks.ts` unions
+ * the map border into the arterial graph without joining them, so an arterial
+ * loop reaching no border edge is exactly that second component, and its
+ * boundary became a block — inside-out, and subdivision preserves orientation,
+ * so its leaves were inside-out too. Measured on 2026-08-04: one such block on
+ * `akiba-02` at the golden parameters carrying 5 lots, and four on `akiba-01` at
+ * 512 cells carrying 18, all zoned casino.
+ *
+ * `outerFaceIndex` still names the most negative face, which for a connected
+ * embedding is the same answer it always gave.
+ */
 const withOuterFlag = (faces: readonly Face[]): FaceTraversalResult => {
   const outerFaceIndex = faces.reduce(
     (bestIndex, face, index) =>
@@ -241,9 +261,9 @@ const withOuterFlag = (faces: readonly Face[]): FaceTraversalResult => {
     0
   );
   return {
-    faces: faces.map((face, index) => ({
+    faces: faces.map((face) => ({
       ...face,
-      isOuter: index === outerFaceIndex,
+      isOuter: face.signedArea < 0,
     })),
     outerFaceIndex,
   };
@@ -251,9 +271,8 @@ const withOuterFlag = (faces: readonly Face[]): FaceTraversalResult => {
 
 /**
  * Traces every face of the planar graph formed by `nodes` and undirected
- * `edges`, including the single outer (unbounded) face — identified by its
- * negative signed area, which is also the largest by absolute magnitude for
- * a connected embedding.
+ * `edges`, outer faces included — each identified by its negative signed area
+ * and flagged `isOuter`, one per connected component.
  */
 export const traverseFaces = (
   nodes: readonly FaceGraphNode[],

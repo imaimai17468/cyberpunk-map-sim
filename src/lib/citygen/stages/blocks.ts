@@ -21,6 +21,7 @@ import {
   centroid,
   isSelfIntersecting,
   samplePolygonInteriorPoints,
+  signedArea,
   splitPolygon,
 } from "../geometry/polygon";
 import { polylinePoints } from "./roadGeometry";
@@ -206,7 +207,16 @@ const buildFaceGraph = (roads: RoadGraph, grid: Grid): FaceGraph => {
       { nodes: [], edges: [], nextId: shapeIdBase }
     );
 
-  const edgeIdBase = chains.edges.reduce((m, e) => Math.max(m, e.id), -1) + 1;
+  // Based past every road edge, including the ones the chain filter dropped.
+  // `blocksStage` decides whether a face edge is arterial or border by looking
+  // its id up in a set built from all of `roads.edges`, unfiltered — so a border
+  // edge handed an id that a dropped road still holds would come back tagged
+  // `arterial` and `lots.ts` would bill the map's own edge as carriageway. The
+  // arterials stage resolves both ends of every edge through `resolveNodeId`,
+  // which never returns a negative, so nothing is dropped today and the two
+  // maxima agree; the field is documented as `-1` for cut and alley edges,
+  // which is what this stage appends to the graph it returns.
+  const edgeIdBase = roads.edges.reduce((m, e) => Math.max(m, e.id), -1) + 1;
   const border = borderGraph(grid, chains.nextId, edgeIdBase);
   return {
     nodes: [...endpointNodes, ...chains.nodes, ...border.nodes],
@@ -622,9 +632,24 @@ export const blocksStage = (
     nextCutId: { value: 0 },
   };
 
+  // Every outer face is dropped, not just `outerFaceIndex`. The border rectangle
+  // above is unioned in without being joined to the arterials, so an arterial
+  // loop that reaches no border edge is its own component and hands back its own
+  // reversed boundary; excluding one face by index left that one to become a
+  // block, inside-out — one on `akiba-02` at the golden parameters, carrying 5
+  // lots zoned casino, and four on `akiba-01` at 512 cells carrying 18.
+  //
+  // Except when it is folded, which `isOuter` cannot tell apart: a bowtie's two
+  // lobes contribute opposite signs to the shoelace sum, so a self-crossing face
+  // can total negative and look reversed. Dropping those here would take them
+  // out before the fold filter below ever sees them, and the engine would stop
+  // reporting discards it used to report — measured: face 1 on `akiba-02` at the
+  // golden parameters is self-intersecting with a signed area of -13440 and
+  // accounts for 3 of that seed's folded blocks. So a folded outer face still
+  // enters, and the filter below is still what rejects it, through `observe`.
   const regions = traversal.faces
-    .filter((_face, index) => index !== traversal.outerFaceIndex)
     .map((face) => ({
+      isOuter: face.isOuter,
       ring: face.nodeIds
         .map((id) => posById.get(id))
         .filter((p): p is Vec2 => p !== undefined),
@@ -635,7 +660,25 @@ export const blocksStage = (
           : { kind: "border", refId: edgeId }
       ),
     }))
-    .filter((region) => region.ring.length >= 3);
+    .filter((region) => region.ring.length >= 3)
+    .filter((region) => !region.isOuter || isSelfIntersecting(region.ring));
+
+  // What that filter drops, it drops without telling anyone, and that is not an
+  // omission: an exterior face is not a discard. It is the boundary of the map
+  // or of a component, has never been counted, and there is nothing to report
+  // about the region that was never a region. The `DiscardObserver` contract
+  // covers rings this stage rejected as blocks, which is what the two filters
+  // below do.
+  //
+  // The one way this could hide a real region is a bounded face whose shoelace
+  // sum crosses zero from rounding alone. It cannot at this scale. Swept over
+  // 8 seeds, `sizeM` 1024/2048/4096 and `cells` 128/256 — 48 configurations,
+  // 270 simple faces — the smallest was 1 m², on `zzz` at 1024 m and 256 cells.
+  // Against coordinates reaching 4096 m the shoelace terms reach about 1.7e7,
+  // so double precision leaves an absolute error near 1e-6 m² even over a few
+  // hundred vertices: six orders of magnitude of room. Arterial geometry is
+  // Douglas-Peucker simplified at `ARTERIALS.simplifyEpsilonM` and its nodes
+  // merge within `nodeSnapM`, which is why nothing thinner ever reaches here.
 
   /**
    * A folded ring is not a block, so it does not become one.
@@ -652,11 +695,11 @@ export const blocksStage = (
    * then `zoning` has already scored the block from a centroid that can sit
    * outside it. Before this filter existed, 7 folded blocks reached them on
    * `akiba-02` and 1 on `akiba-03` at the golden parameters; chaining the
-   * arterials above brought `akiba-02` down to 5, so what it removes now is 5
-   * and 1 — counted under vitest, which is the engine the goldens are taken
-   * with. A `bun` script reports 2 on `akiba-02`; ADR-0027 calls cross-engine
-   * reproducibility "designed for but only opportunistically tested" and this
-   * is one of the places it is not.
+   * arterials above took `akiba-02` to 5, and what this removes now is 5 and 1 —
+   * counted under vitest, which is the engine the goldens are taken with. A
+   * `bun` script reports 2 on `akiba-02`; ADR-0027 calls cross-engine
+   * reproducibility "designed for but only opportunistically tested" and this is
+   * one of the places it is not.
    *
    * Filtered here, before `adjacencyOf` and the ring pool, because every id
    * downstream is an index into this array: dropping a leaf later would leave
@@ -665,12 +708,36 @@ export const blocksStage = (
   const cut = regions.flatMap((region) =>
     subdivide(region.ring, region.refs, 0, ctx)
   );
-  const leaves = cut.filter((leaf) => !isSelfIntersecting(leaf.ring));
-  if (leaves.length !== cut.length) {
+  const simple = cut.filter((leaf) => !isSelfIntersecting(leaf.ring));
+  if (simple.length !== cut.length) {
     observe({
       stage: "blocks",
       reason: "folded-block",
-      count: cut.length - leaves.length,
+      count: cut.length - simple.length,
+    });
+  }
+  /**
+   * Clockwise is not a block either, and the fold test does not catch it.
+   *
+   * Cutting a reversed face yields reversed children, and a child can come out
+   * simple — no crossing for `isSelfIntersecting` to find — while still wound
+   * the wrong way, so it encloses everything except the ground it covers. Its
+   * area is then read as positive by `area`, its centroid lands outside it, and
+   * `zoning` scores it: one such block on `akiba-02` at the golden parameters
+   * carried 5 lots zoned casino, four on `akiba-01` at 512 cells carried 18.
+   *
+   * Rejected here rather than by dropping the parent face, because a reversed
+   * face that also crosses itself is the source of folded leaves this stage has
+   * always reported. Dropping it whole silenced 3 of `akiba-02`'s discards while
+   * appearing to fix the count. So the parent still enters and both tests run on
+   * the leaves, each reporting what it took.
+   */
+  const leaves = simple.filter((leaf) => signedArea(leaf.ring) > 0);
+  if (leaves.length !== simple.length) {
+    observe({
+      stage: "blocks",
+      reason: "inside-out-block",
+      count: simple.length - leaves.length,
     });
   }
   const neighbours = adjacencyOf(leaves);

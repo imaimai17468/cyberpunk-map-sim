@@ -331,11 +331,17 @@ describe("golden hashes", () => {
    * engine's answer and the committed answer cannot drift apart silently.
    *
    * Taken under vitest, which is what asserts them. A script run under bun
-   * reports 2 folded blocks here rather than 5 — ADR-0027 calls cross-engine
-   * reproducibility "designed for but only opportunistically tested", and this
-   * is what that costs in practice. Regenerate these the same way the goldens
-   * are regenerated, from inside the test runner, or the numbers will disagree
-   * with the runner that checks them.
+   * reports 2 folded blocks here rather than 5 and no inside-out block at all —
+   * ADR-0027 calls cross-engine reproducibility "designed for but only
+   * opportunistically tested", and this is what that costs in practice.
+   * Regenerate these the same way the goldens are regenerated, from inside the
+   * test runner, or the numbers will disagree with the runner that checks them.
+   *
+   * The list is asserted whole rather than per reason, which is what caught a
+   * regression these counts would otherwise have hidden: excluding a folded
+   * outer face before subdivision took `folded-block` from 5 to 2 and looked
+   * like an improvement, when 3 of those discards had merely stopped being
+   * reported. Asserting the sequence means a reason that disappears fails here.
    */
   it("should report every discard it made when one is observed", () => {
     const seen: Discard[] = [];
@@ -346,6 +352,7 @@ describe("golden hashes", () => {
       { stage: "arterials", reason: "zero-length-edge", count: 259 },
       { stage: "arterials", reason: "duplicate-route", count: 58 },
       { stage: "blocks", reason: "folded-block", count: 5 },
+      { stage: "blocks", reason: "inside-out-block", count: 1 },
     ]);
   });
 

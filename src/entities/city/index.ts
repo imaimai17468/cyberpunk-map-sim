@@ -260,6 +260,11 @@ export const DISCARD_REASONS = [
   "duplicate-route",
   /** A block ring that crosses itself, whose area and centroid mean nothing. */
   "folded-block",
+  /**
+   * A block ring wound clockwise, so it encloses the ground outside itself.
+   * Simple, unlike a folded ring, so the fold test passes it.
+   */
+  "inside-out-block",
 ] as const;
 /** @public published domain vocabulary: the name a new discard reason is added to */
 export type DiscardReason = (typeof DISCARD_REASONS)[number];

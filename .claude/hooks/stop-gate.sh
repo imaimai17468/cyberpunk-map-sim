@@ -78,7 +78,31 @@ if [ "$CODE_CHANGED" -gt 0 ]; then
   SIM_BIN="$HOME/.cargo/bin/similarity-ts"
   command -v similarity-ts >/dev/null 2>&1 && SIM_BIN=$(command -v similarity-ts)
   if [ -x "$SIM_BIN" ]; then
-    SIM=$("$SIM_BIN" ./src 2>&1 || true)
+    # -t 0.95 rather than similarity-ts 0.4.1's default of 0.87, because the
+    # default measures this repo's house style instead of its duplication.
+    # `style-rules/no-loops` leaves only folds (ADR-0027), so every function here
+    # is some shape of `Array.from` / `reduce` / `flatMap`, and the windowed
+    # comparison scores that skeleton. Measured on ./src on 2026-08-04, after the
+    # one real duplicate the sweep found (noise.ts's two fBm variants) was
+    # removed: 0.87 reports 57 function pairs, 0.90 reports 25, 0.92 reports 6,
+    # 0.95 reports 0. The pairs 0.87 adds are cross-domain and unequal in length
+    # — an 11-line box blur against a 45-line PRNG at 90.98% — which is the
+    # tool matching a window of the larger against the whole of the smaller.
+    # roadLines.ts, above `createRoadLines`, made this same skeleton argument
+    # independently and at more length before this threshold existed. Its own
+    # note is about that function's pairing with terrainMesh.test.ts's `heightIn`
+    # rather than with `buildFaceGraph`; the loop below keys on the line before a
+    # reported location and never reads which partner the reason names, so that
+    # note and the one above `buildFaceGraph` in blocks.ts each already cover
+    # whichever 87-88% pair lands on their own line. Both are inert at 0.95 and
+    # kept only against a lowering.
+    #
+    # This trades recall for a gate anyone reads. At 0.87 clearing the report
+    # meant ~40 `similarity-ignore` comments repeating one sentence, and one more
+    # per fold written afterwards, which is the enumeration AGENTS.md warns rots.
+    # What it costs: a genuine duplicate scoring between 0.87 and 0.95 now passes
+    # silently. Raise this back and re-measure if a real one is ever found there.
+    SIM=$("$SIM_BIN" -t 0.95 ./src 2>&1 || true)
   else
     SIM_AVAILABLE=false
     SIM_TAG=" (similarity: SKIPPED — similarity-ts not installed)"

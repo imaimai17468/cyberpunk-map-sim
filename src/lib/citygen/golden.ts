@@ -45,55 +45,86 @@ export interface GoldenEntry {
   readonly stageHashes: Readonly<Record<StageName, string>>;
 }
 
+/**
+ * Regenerated 2026-08-05 for the arterial corner rounding, all three seeds. Four
+ * values moved on each — `arterials`, `blocks`, `buildings` and the whole-model hash
+ * — plus `lots` on `akiba-02` alone. `zoning` moved nowhere.
+ *
+ * That distribution looks like a change that half failed to propagate, and it is
+ * worth writing down as the opposite: it is what this configuration is able to see.
+ * `GOLDEN_PARAMS` is 128 cells, and at that resolution almost nothing is bounded by
+ * an arterial — 0, 1 and 2 blocks out of 842, 969 and 847, against 2,634 `cut` refs
+ * on `akiba-01` alone. Counting the block ring vertices that land exactly on an
+ * arterial's own interior vertex, the three seeds give 0, 6 and 0. `akiba-02` is the
+ * only one that is not zero, and `akiba-02` is the only one whose `lots` hash moved.
+ *
+ * That last count is the one here that needs its method stated to be re-run: take
+ * every `highway` or `avenue` edge, take `polylinePoints(...).slice(1, -1)` as its
+ * interior vertices, key those and every `blockPolygons` vertex as `x.toFixed(2)`
+ * with `y.toFixed(2)`, and count the ring vertices whose key is in that set. The
+ * others come straight off `boundary[].kind` and the block array.
+ *
+ * At the 512 cells the app itself generates, the same counts are 13, 8 and 3 blocks
+ * and 122, 35 and 21 ring vertices, with 143, 59 and 30 arterial refs. So the
+ * coupling between road shape and block shape is live in the product and all but
+ * unwitnessed here: a change that broke only that coupling would pass every hash in
+ * this file on two seeds out of three. Raising the golden resolution would catch it
+ * and would rewrite every value here, which is a decision of its own and not one
+ * this change makes.
+ *
+ * `blocks` moves on every seed regardless, but at 128 cells mostly through the road
+ * pool the stage emits alongside its polygons — the `blocks` writer in `pipeline.ts`
+ * hashes `blockLayer.roads.polylines.coords` too. That is the arterials appearing a
+ * second time, not the blocks responding to them.
+ *
+ * The previous regeneration, 2026-08-04, was for the self-loop determinism fix and
+ * moved `akiba-02` only; `akiba-01` and `akiba-03` reproduced their older hashes
+ * exactly, neither having carried a self-loop arterial.
+ */
 export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
   "akiba-01": {
-    contentHash: "3e4acecc707868ba",
+    contentHash: "03a72c397fb21569",
     stageHashes: {
       terrain: "7e22e397873605da",
       hydrology: "fcfa14d079f26450",
       derived: "0eb87c35b40df7e6",
       anchors: "77f67b220d818860",
       social: "971eb99d3052a14e",
-      arterials: "48162e72fd50c77f",
-      blocks: "81b2524e02d5897f",
+      arterials: "6d92612038e46740",
+      blocks: "5e5947b40947c784",
       zoning: "d84bcb7ed308020d",
       lots: "0b05536beea52762",
-      buildings: "28d6ff17972f033c",
+      buildings: "e0da70c9338751cb",
     },
   },
-  // Regenerated 2026-08-04 for the self-loop determinism fix, and only this seed
-  // moved: `akiba-01` and `akiba-03` reproduce their previous hashes exactly,
-  // because neither carried a self-loop arterial. The five values that changed are
-  // `blocks` and the three stages downstream of it, plus the whole-model hash —
-  // which is the shape a `blocks` change is supposed to have.
   "akiba-02": {
-    contentHash: "c4d1ffd11cfe9609",
+    contentHash: "1e03520f85052fbb",
     stageHashes: {
       terrain: "7d83a8eb1f9050c4",
       hydrology: "b201772eac6cf3ee",
       derived: "08e62c57c6c45c13",
       anchors: "49bdb410abab47d6",
       social: "8cb24c78561f0b8e",
-      arterials: "7d276084cee147a5",
-      blocks: "3484c31d357ba5c3",
+      arterials: "8ba7a4578282454f",
+      blocks: "37aeef94a4894276",
       zoning: "bd368aad40fa0a0d",
-      lots: "63f40ebb8cb5b609",
-      buildings: "5972fc49766224cb",
+      lots: "4c8529337cf1f893",
+      buildings: "0cff8d22a62809c6",
     },
   },
   "akiba-03": {
-    contentHash: "5eb1ff55a039fa42",
+    contentHash: "3fe68e56106e3bce",
     stageHashes: {
       terrain: "1e715e3193652004",
       hydrology: "7eca9d76c27f920a",
       derived: "03f4eef79adabb3d",
       anchors: "6c1fc013e115f3e0",
       social: "3ad8ded031d6406e",
-      arterials: "1d347eb83fd3d083",
-      blocks: "f17b9ee2f60a0cec",
+      arterials: "e6c0b3ecd7586ce7",
+      blocks: "8a5300bc8fdc5163",
       zoning: "307796c8ba0d53ee",
       lots: "7a60fe0e97f75341",
-      buildings: "a874581a19d5f042",
+      buildings: "e2c45113f54d12bb",
     },
   },
 };

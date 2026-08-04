@@ -8,10 +8,12 @@ import {
   type PolygonPool,
   type Vec2,
 } from "@/entities/city";
+import { segmentIntersection } from "./geometry/intersect";
 import { isSelfIntersecting } from "./geometry/polygon";
 import { GOLDEN_CITIES, GOLDEN_PARAMS } from "./golden";
 import { generateCity, zoningStageBytes } from "./pipeline";
 import { expectedLotCount, unclampedAreaScale } from "./stages/lots";
+import { polylinePoints } from "./stages/roadGeometry";
 import { gridOf } from "./stages/types";
 import { totalInstanceCount } from "./stages/assemble";
 
@@ -275,6 +277,38 @@ const ringAt = (pool: PolygonPool, index: number): readonly Vec2[] => {
   }));
 };
 
+const COINCIDENT_M = 1e-6;
+
+const coincide = (a: Vec2, b: Vec2): boolean =>
+  Math.abs(a.x - b.x) < COINCIDENT_M && Math.abs(a.y - b.y) < COINCIDENT_M;
+
+/**
+ * True when a polyline crosses itself somewhere other than at a shared vertex.
+ *
+ * Only non-adjacent segment pairs are compared, and a pair sharing an endpoint is
+ * skipped whichever ends touch: consecutive segments meet at a vertex by
+ * construction, and an arterial's two ends are allowed to meet too —
+ * `splitIntoEdgeVertexLists` deliberately keeps a piece that returns to where it
+ * started while enclosing real ground, so the first and last segment of such an edge
+ * touch legitimately.
+ */
+const selfCrosses = (points: readonly Vec2[]): boolean => {
+  const segments = points
+    .slice(0, -1)
+    .map((a, i) => [a, points[i + 1]] as const);
+  return segments.some((one, i) =>
+    segments.slice(i + 2).some((two) => {
+      const shares = [one[0], one[1]].some((p) =>
+        [two[0], two[1]].some((q) => coincide(p, q))
+      );
+      if (shares) return false;
+      return (
+        segmentIntersection(one[0], one[1], two[0], two[1]).kind !== "none"
+      );
+    })
+  );
+};
+
 describe("golden hashes", () => {
   // Memoised: the stage-hash and content-hash assertions are separate tests
   // (single-expect), but they should not pay for two generations per seed.
@@ -437,6 +471,45 @@ describe("golden hashes", () => {
         model.blocks.filter((block) =>
           isSelfIntersecting(ringAt(model.blockPolygons, block.ringIndex))
         )
+      ).toEqual([]);
+    }
+  );
+
+  /**
+   * A road that crosses itself, which corner rounding is the one thing here that
+   * could introduce.
+   *
+   * `geometry/smooth.ts` holds each fillet to half of each segment it sits on, which
+   * proves that two *adjacent* fillets cannot overlap and proves nothing about a
+   * fillet against a distant part of the same polyline — a line doubling back to
+   * within `2·maxDeviationM` of itself could be handed a crossing it did not have,
+   * because the fillet bulges toward the inside of its turn, which is the side a
+   * returning line is on.
+   *
+   * It cannot be caught later. Smoothing runs after `planarizeArterials` has already
+   * found its crossings, so nothing downstream looks for one again: `blocks.ts` would
+   * chain the folded polyline into its face graph and the rotation at the crossing
+   * would be sorted by a comparator with no crossing to sort. Hence a test rather
+   * than a comment.
+   *
+   * It is not vacuous, and the check it guards is a specific one. Delete the two
+   * segment-half terms from `filletAt`'s `Math.min`, leaving only the deviation
+   * budget, and this fails on all three seeds. Delete the budget term instead,
+   * leaving the segment halves, and it still passes — only the golden hashes move.
+   * So the segment cap is what holds this property at these parameters, and the
+   * budget is what holds the departure bound that `smooth.test.ts` pins. Both were
+   * run; neither is asserted from the shape of the code.
+   */
+  it.each(Object.keys(GOLDEN_CITIES))(
+    "should leave no self-crossing road polyline when generating seed %s",
+    (seed) => {
+      const model = goldenFor(seed);
+      expect(
+        model.roads.edges
+          .filter((edge) =>
+            selfCrosses(polylinePoints(model.roads, edge.polylineIndex))
+          )
+          .map((edge) => ({ id: edge.id, cls: edge.cls }))
       ).toEqual([]);
     }
   );

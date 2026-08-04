@@ -119,6 +119,30 @@ export const ARTERIALS = {
   snapLatticeM: 0.25,
   /** Discount applied along the waterfront so the strip hugs the shore. */
   stripWaterBandDiscount: 0.6,
+  /**
+   * Corner rounding applied to each simplified run — a `SmoothOptions` for
+   * `geometry/smooth.ts`, which is where the shape of the curve is explained.
+   *
+   * `maxDeviationM` is what decides how much of the terrain-following the road is
+   * allowed to give up, because the path underneath it was chosen to avoid water
+   * and slope and rounding a corner cuts inside it. 8 m is two grid cells at the
+   * app's own extent and roughly half a carriageway, so the original route still
+   * lies under the drawn road — a highway covers 15 m either side of its
+   * centreline — and the water and slope the route was avoiding are still being
+   * avoided. It is also rarely the binding cap: measured on the golden seeds, a
+   * median 39-degree turn between 40 m segments is held to 20 m of tangent by the
+   * segments themselves, which spends 3.3 m of the budget.
+   *
+   * `maxChordM` matches `simplifyEpsilonM` on purpose. Douglas-Peucker has already
+   * declared detail finer than 6 m not worth keeping on these paths, so
+   * reproducing the curve to better than that would add vertices the whole
+   * downstream pipeline pays for — `blocks.ts` makes a face-graph node of each —
+   * to represent precision the input never had.
+   */
+  smooth: {
+    maxDeviationM: 8,
+    maxChordM: 6,
+  },
 } as const;
 
 /**

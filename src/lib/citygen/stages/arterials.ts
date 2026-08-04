@@ -20,6 +20,7 @@ import {
   type IndexedSegment,
 } from "../geometry/intersect";
 import { douglasPeucker } from "../geometry/simplify";
+import { smoothPolyline } from "../geometry/smooth";
 import { dot, sub } from "../geometry/vec";
 import { boundedDrain } from "../graph/drain";
 import { MinHeap } from "../graph/heap";
@@ -780,6 +781,48 @@ const dedupeCoincident = (
   return [...merged.values()];
 };
 
+/**
+ * The last thing done to an arterial: its corners rounded off.
+ *
+ * A Dijkstra path is a lattice staircase and Douglas-Peucker thins it without
+ * straightening it, so an arterial arrives here bending a median 39 degrees every
+ * 40 m on the golden seeds. `geometry/smooth.ts` holds that measurement and the
+ * shape of the curve. Two things belong here instead: why the generator rounds them
+ * at all, and why at this exact point in the stage.
+ *
+ * Why the generator. Every stage after this one reads these very vertices —
+ * `blocks.ts` chains them into its face graph, so a block boundary *is* the road;
+ * `lots.ts` insets the carriageway off that boundary; `buildings.ts` sweeps the same
+ * polyline to hold candidates clear of it. Curving the centreline here curves the
+ * city with it. Curving it in the viewer instead would have left the road surface
+ * bending where the blocks around it did not, and at a 79-degree turn that is
+ * pavement sitting metres off the ground the city reserved for it.
+ *
+ * Why after planarization, and after the dedupe, rather than on the runs going in.
+ * It was written on the runs first and the graph came out measurably worse: on
+ * `akiba-02` at the golden parameters, zero-length edges went from 259 to 800,
+ * duplicate routes from 58 to 237, and the self-loops `blocks.ts` then has to drop
+ * from 1 to 101. Curves from two paths that share the CBD trunk and diverge run
+ * near-tangentially for a while, so a single crossing gets found on several of the
+ * short chords at once; the insertions land a few metres apart, `resolveNodeId`
+ * merges anything inside `nodeSnapM` into one node, and each collapsed pair becomes
+ * an edge with no length. Feeding the planarizer the straight geometry it was tuned
+ * on avoids all of it.
+ *
+ * Nothing is lost by waiting. Every crossing the planarizer found is a break point,
+ * so it is already an edge endpoint, and `smoothPolyline` pins the endpoints it is
+ * given — junctions therefore stay exactly on the curve, and so do the run
+ * boundaries that mark where a bridge leaves land. What stays unrounded is the
+ * corner *at* a junction, which is where roads meet and where a bend belongs. A
+ * corner in the middle of an edge may still cut up to `maxDeviationM` toward
+ * whatever the route was avoiding; that is bounded by construction and smaller than
+ * the half-width the carriageway already covers.
+ */
+const smoothEdge = (e: EdgeData): EdgeData => ({
+  ...e,
+  vertices: smoothPolyline(e.vertices, ARTERIALS.smooth),
+});
+
 const buildRoadGraph = (edgesData: readonly EdgeData[]): RoadGraph => {
   const registry: NodeRegistry = { byKey: new Map(), nodes: [] };
   const edges: RoadEdge[] = edgesData.map((e, id) => ({
@@ -842,7 +885,7 @@ export const planarizeArterials = (
       count: edgesData.length - deduped.length,
     });
   }
-  return buildRoadGraph(deduped);
+  return buildRoadGraph(deduped.map(smoothEdge));
 };
 
 const buildAllRawPaths = (

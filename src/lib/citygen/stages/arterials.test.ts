@@ -1,4 +1,4 @@
-import type { TerrainLayer, Vec2 } from "@/entities/city";
+import type { Crossing, RoadClass, TerrainLayer, Vec2 } from "@/entities/city";
 import { WATER_CLASSES } from "@/entities/city";
 import { describe, expect, it } from "vitest";
 import { createField2D } from "../field/field2d";
@@ -407,6 +407,26 @@ describe("splitIntoEdgeVertexLists", () => {
   });
 });
 
+/**
+ * One straight run along the x axis. Two of these on different path indices are
+ * byte-identical routes, which is what gives `dedupeCoincident` something to merge.
+ */
+const straightRun = (
+  cls: RoadClass,
+  crossing: Crossing,
+  strip: boolean,
+  pathIndex: number
+): FamilyRun => ({
+  points: [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+  ],
+  crossing,
+  cls,
+  strip,
+  pathIndex,
+});
+
 describe("planarizeArterials", () => {
   it("should split each polyline into two edges when two polylines cross once", () => {
     const runA: FamilyRun = {
@@ -492,6 +512,60 @@ describe("planarizeArterials", () => {
       edges: 8,
     });
   });
+
+  /**
+   * The discard path with nobody listening.
+   *
+   * Every other case here either passes an observer or discards nothing, which left
+   * the `observe: DiscardObserver = () => undefined` default assigned but never
+   * called — and V8 counts a default argument as covered only once the default value
+   * is actually invoked, so three existing calls that omit it were not enough. Two
+   * byte-identical runs on different paths give `dedupeCoincident` something to merge,
+   * which is what fires `observe` inside the function rather than at its signature.
+   */
+  it("should still merge a duplicate route when no observer is attached", () => {
+    const graph = planarizeArterials([
+      straightRun("avenue", "none", false, 0),
+      straightRun("avenue", "none", false, 1),
+    ]);
+    expect({ nodes: graph.nodes.length, edges: graph.edges.length }).toEqual({
+      nodes: 2,
+      edges: 1,
+    });
+  });
+
+  /**
+   * Which of two coincident routes decides the survivor's class, marking and strip.
+   *
+   * `dedupeCoincident` keeps the strongest class, any bridge marking and any strip
+   * flag, and each of those is a branch that only runs once two routes actually
+   * merge — which nothing exercised until the case above. Both orders are here
+   * because the class test compares the incoming route against the kept one, so a
+   * single order proves only the half of it that happened to win.
+   */
+  it.each([
+    ["the strongest route arrives second", 1],
+    ["the strongest route arrived first", 0],
+  ] as const)(
+    "should keep the strongest class, the bridge and the strip when %s",
+    (_label, strongIndex) => {
+      // Both orders, so each of the three merge rules is exercised from both
+      // sides: the class test compares the arriving route against the kept one,
+      // and the bridge test reads only the kept one.
+      const strong = straightRun("highway", "bridge", true, strongIndex);
+      const weak = straightRun("avenue", "none", false, 1 - strongIndex);
+      const graph = planarizeArterials(
+        strongIndex === 0 ? [strong, weak] : [weak, strong]
+      );
+      expect(
+        graph.edges.map((e) => ({
+          cls: e.cls,
+          crossing: e.crossing,
+          strip: e.strip,
+        }))
+      ).toEqual([{ cls: "highway", crossing: "bridge", strip: true }]);
+    }
+  );
 
   it("should not insert a split when two touching runs share the same path index", () => {
     const runA: FamilyRun = {

@@ -1,5 +1,6 @@
 import type { RoadClass, Vec2 } from "@/entities/city";
 import { ROAD_WIDTH_M } from "@/lib/citygen/constants";
+import { scale } from "@/lib/citygen/geometry/vec";
 
 /**
  * Turning road centrelines into a surface of their real width.
@@ -49,9 +50,68 @@ const offset = (p: Vec2, n: Vec2, by: number): Vec2 => ({
 
 /**
  * One flat face, given as its corners in order: four for a carriageway quad,
- * three for the wedge that closes a turn.
+ * three for each triangle of the fans that close a turn or an end.
  */
 type Face = readonly Vec2[];
+
+/**
+ * How long a chord the rounded parts may be drawn with, in metres.
+ *
+ * Applies to the joint fans and the end caps, which are the only curved things
+ * here. The sagitta of a chord `c` on radius `r` is about `c²/8r`, so 2 m on the
+ * narrowest class — a 4 m alley, `r` = 2 — leaves 0.25 m of flat, and on a highway
+ * 0.03 m.
+ *
+ * It costs almost nothing because it only ever applies to a rim. A cap is two
+ * quarter sweeps, each a chord of `√2·r`, so it is `2·⌈√2·r / 2⌉` triangles an end:
+ * 22 on a highway, 16 on an avenue, 8 on a street, 4 on an alley. As a formula
+ * rather than four numbers, because four numbers rot one road width at a time —
+ * the highway figure here read 24 until a reviewer counted the triangles.
+ */
+const RIM_CHORD_M = 2;
+
+/** Unit vector `t` of the way from unit `a` to unit `b`, along the rim. */
+const unitLerp = (a: Vec2, b: Vec2, t: number): Vec2 => {
+  const x = a.x + (b.x - a.x) * t;
+  const y = a.y + (b.y - a.y) * t;
+  const length = Math.sqrt(x * x + y * y);
+  return { x: x / length, y: y / length };
+};
+
+/**
+ * Triangles sweeping the rim from unit direction `from` to unit direction `to`.
+ *
+ * Normalising a lerp rather than stepping an angle: the result is exactly on the
+ * circle either way, and this needs no trigonometry and no angle to have been
+ * taken.
+ *
+ * The caller must keep the sweep under half a turn. At exactly half, `from` and
+ * `to` are antiparallel, the lerp passes through the zero vector, and dividing by
+ * its length yields NaN corners — geometry that draws as nothing and reports no
+ * error. This is stated rather than checked: both callers are provably inside the
+ * bound (`capFaces` sweeps two fixed quarters; `jointFace`'s sweep is a road's own
+ * turn, and it returns early on the reversal that would be 180 degrees), and a
+ * guard for a case neither can reach would be a branch no test could honestly
+ * cover. A third caller is what would change that — `roads that curve` is named
+ * below as the next thing to build here, and it must either respect this or bring
+ * the guard and its test with it.
+ *
+ * Wound `[centre, next, current]`, which is clockwise in the generator's axes and
+ * therefore upward once `y` becomes three's `z`. Callers that need the other
+ * handedness swap `from` and `to` rather than reversing the corners here.
+ */
+const rimFan = (centre: Vec2, from: Vec2, to: Vec2, radius: number): Face[] => {
+  const chord =
+    Math.sqrt(
+      (to.x - from.x) * (to.x - from.x) + (to.y - from.y) * (to.y - from.y)
+    ) * radius;
+  const steps = Math.max(1, Math.ceil(chord / RIM_CHORD_M));
+  return Array.from({ length: steps }, (_value, i) => [
+    centre,
+    offset(centre, unitLerp(from, to, (i + 1) / steps), radius),
+    offset(centre, unitLerp(from, to, i / steps), radius),
+  ]);
+};
 
 /**
  * The quads for one straight run, cut so none is longer than `span`.
@@ -114,11 +174,23 @@ const runFaces = (a: Vec2, b: Vec2, half: number, span: number): Face[] => {
  * them as joints that happen to lose nothing is what once made this look like a
  * three-quarters problem instead of an every-joint one.
  *
- * A bevel rather than a mitre: a mitre spikes without bound as the turn
- * approaches a hairpin and then needs a limit and a fallback anyway, and at
- * these widths the bevel's flat corner is indistinguishable from the mitre's
- * point. Streets and alleys never reach here — the generator gives them no
- * interior vertices — so this only ever runs on the two wide classes.
+ * An arc rather than a mitre: a mitre spikes without bound as the turn approaches
+ * a hairpin and then needs a limit and a fallback anyway. It is drawn as the fan
+ * `rimFan` returns, which is SVG's `stroke-linejoin: round` and, at one triangle,
+ * is exactly the flat bevel this used to draw — a turn whose rim chord is under
+ * `RIM_CHORD_M` still gets that single triangle, and nothing about it changed.
+ *
+ * Most turns are now that case. Since the generator started rounding arterial
+ * centrelines the median interior turn is 4.5 degrees, which on a highway sweeps
+ * 1.2 m of rim, so the fan is one triangle and the bevel is what draws. What the
+ * arc is for is the sharp remainder: the corners at junctions, which the generator
+ * leaves unrounded because an edge ends there. The sharpest measured on the three
+ * golden seeds at 2048 m and 512 cells is 42.7 degrees, on `akiba-01`.
+ *
+ * Streets and alleys never reach here — the generator gives them no interior
+ * vertices — so this only ever runs on the two wide classes. Their corners are
+ * between separate edges meeting at a block ring vertex, which is what `capFaces`
+ * covers instead.
  *
  * One case is left undrawn on purpose. `cross` is the sine of the turn, so it
  * vanishes both for a straight run and for an exact reversal, and the guard
@@ -147,12 +219,93 @@ const jointFace = (
   const cross = d1.x * d2.y - d1.y * d2.x;
   if (Math.abs(cross) < 1e-9) return [];
   // Outside of the turn is the right hand of a left turn, and vice versa.
-  const side = cross > 0 ? -half : half;
-  const a = offset(vertex, leftOf(d1), side);
-  const b = offset(vertex, leftOf(d2), side);
-  // Wound to match the quads: clockwise in the generator's axes, which is what
-  // faces up once `y` becomes three's `z`. See `emit` below.
-  return [cross > 0 ? [vertex, b, a] : [vertex, a, b]];
+  const outward = cross > 0 ? -1 : 1;
+  const from: Vec2 = scale(leftOf(d1), outward);
+  const to: Vec2 = scale(leftOf(d2), outward);
+  // Swept in the direction that comes out clockwise in the generator's axes, which
+  // is what faces up once `y` becomes three's `z`. See `rimFan` and `emit`.
+  return cross > 0
+    ? rimFan(vertex, from, to, half)
+    : rimFan(vertex, to, from, half);
+};
+
+/**
+ * The half-disc that closes each end of a polyline: SVG's `stroke-linecap: round`.
+ *
+ * This is the one part of the ribbon that streets need. A street is always a
+ * two-vertex straight — measured on the three golden seeds at 2048 m and 512 cells,
+ * every one of the 2,587, 2,680 and 2,450 street edges has exactly two points — so
+ * no joint fan can ever fire on one, while the cuts that produce them meet at block
+ * ring corners in their thousands. Two butt ends at a shared corner leave the same
+ * notch a bend leaves, and only a cap fills it. Alleys would be in the same position
+ * and are not counted here: `ROAD_CLASSES` carries the class but no stage assigns
+ * it, so there is nothing yet to have measured.
+ *
+ * It paves ground that was already reserved, wherever the corner is between two
+ * roads. A lot is inset from its block boundary by half the carriageway bounding it,
+ * and every point within `half` of the corner is within `half` of both edges meeting
+ * there — the perpendicular distance to a line through a point cannot exceed the
+ * distance to the point — so the quarter-disc lands in the strip no lot can occupy.
+ * The exception is a corner where the other edge is `border` or `water`, which
+ * `lots.ts` insets by nothing at all, there being no far side to reserve; a cap
+ * there can reach ground a lot may hold. Not measured, and left alone: at the map
+ * edge and the shoreline it is a rounded corner over ground nothing else is drawing.
+ *
+ * Where a street ends on an arterial, the cap reaches half a street past the
+ * arterial's centreline and disappears under a carriageway wider than that in every
+ * pairing the generator makes.
+ *
+ * Two quarters rather than one half, because `rimFan` normalises a lerp and a
+ * half-turn passes through the zero vector. The outward direction is the seam.
+ *
+ * A polyline whose first or last segment has no direction gets no cap at that end.
+ * The generator drops consecutive duplicates, so this is the fully degenerate run
+ * — the one `ribbonOf` already draws nothing for.
+ *
+ * Fewer than two points gets nothing at all, and that guard is this function's own
+ * rather than the caller's. `runFaces` and `jointFace` are reached through
+ * `slice(...).flatMap(...)`, which quietly yields nothing on a short array; this one
+ * indexes, so without the guard `polyline[1]` is `undefined` and `directionOf`
+ * throws — taking the whole class's mesh with it, not just the one bad line.
+ * Nothing produces such a polyline today: `polylinePoints` returns `[]` below two
+ * points, and both sources of road edges are structurally at least two —
+ * `splitIntoEdgeVertexLists` keeps only pieces with two distinct ends, and
+ * `streetEdgesOf` writes exactly two points per cut. It is guarded because the
+ * signature promises nothing of the sort, and because every other helper here
+ * already treats degenerate input as an empty case instead of a crash.
+ */
+const capFaces = (polyline: readonly Vec2[], half: number): Face[] => {
+  if (polyline.length < 2) return [];
+  const head = directionOf(polyline[0], polyline[1]);
+  const tail = directionOf(
+    polyline[polyline.length - 2],
+    polyline[polyline.length - 1]
+  );
+  const start =
+    head === null
+      ? []
+      : [
+          ...rimFan(polyline[0], leftOf(head), scale(head, -1), half),
+          ...rimFan(
+            polyline[0],
+            scale(head, -1),
+            scale(leftOf(head), -1),
+            half
+          ),
+        ];
+  const end =
+    tail === null
+      ? []
+      : [
+          ...rimFan(
+            polyline[polyline.length - 1],
+            scale(leftOf(tail), -1),
+            tail,
+            half
+          ),
+          ...rimFan(polyline[polyline.length - 1], tail, leftOf(tail), half),
+        ];
+  return [...start, ...end];
 };
 
 // similarity-ignore: three lines of flatMap paired with field/blur.ts's boxBlur1D; no-loops leaves every small function that shape
@@ -167,7 +320,9 @@ const facesOf = (
   const joints = polyline
     .slice(1, -1)
     .flatMap((v, i) => jointFace(polyline[i], v, polyline[i + 2], half));
-  return [...runs, ...joints];
+  // Caps last, so the index of every quad and every joint triangle is what it was
+  // before caps existed. `roadRibbons.test.ts` reads specific triangles by index.
+  return [...runs, ...joints, ...capFaces(polyline, half)];
 };
 
 const emit = (

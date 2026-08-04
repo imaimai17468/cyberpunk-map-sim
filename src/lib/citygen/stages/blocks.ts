@@ -94,6 +94,18 @@ interface FaceGraph {
 }
 
 /**
+ * `buildFaceGraph`'s result: the graph, plus what it refused to put in it.
+ *
+ * Returned as data rather than reported from inside the builder so the builder
+ * stays a pure function of the roads and the grid, and `blocksStage` — which owns
+ * the `DiscardObserver` — is the one that speaks.
+ */
+interface ArterialFaceGraph extends FaceGraph {
+  /** Edges whose two ends resolved to one node. See `DISCARD_REASONS`. */
+  readonly selfLoopsDropped: number;
+}
+
+/**
  * The four map corners plus the four border edges, unioned with the arterial
  * graph so the outermost regions are closed rather than unbounded.
  */
@@ -156,9 +168,17 @@ const borderGraph = (
  * filter below drops before subdivision — measured, not reasoned: fed one
  * self-joining avenue carrying one interior vertex, the stage bounds no block by
  * it and reports no discard, while the same edge carrying two interior vertices
- * yields its triangle. So the degenerate case is contained rather than handled,
- * and it leaves no trace in the `DiscardObserver` channel the way a folded block
- * does.
+ * yields its triangle.
+ *
+ * That containment was recorded here as sufficient, and it was not. It describes
+ * what happens to the degenerate *face*, and says nothing about what the
+ * degenerate *half-edges* do to the rotation they sit in. A self-joining edge with
+ * no interior vertex is a self-loop, its two half-edges have no direction, and a
+ * directionless entry used to compare angle-equal to every real edge leaving that
+ * node — which made the rotation sort's comparator non-transitive and its output
+ * engine-dependent, not merely odd. `graph/faces.ts`'s `half` records what that
+ * cost. Self-loops are now dropped on the way in and reported as
+ * `self-loop-edge`, so the case leaves a trace instead of being contained.
  *
  * Consecutive duplicate vertices are dropped on the way in. A zero-length link
  * would hand `comparePseudoAngle` a zero vector and there is no angle to sort
@@ -168,7 +188,7 @@ const borderGraph = (
  * repeated-vertex fixture stops bounding a block at all.
  */
 // similarity-ignore: paired with the viewer's createRoadLines because both are long reduce/flatMap builders, which is what no-loops makes every function here look like
-const buildFaceGraph = (roads: RoadGraph, grid: Grid): FaceGraph => {
+const buildFaceGraph = (roads: RoadGraph, grid: Grid): ArterialFaceGraph => {
   const endpointNodes = roads.nodes.map((n) => ({ id: n.id, pos: n.pos }));
   const shapeIdBase = endpointNodes.reduce((m, n) => Math.max(m, n.id), -1) + 1;
 
@@ -178,6 +198,7 @@ const buildFaceGraph = (roads: RoadGraph, grid: Grid): FaceGraph => {
       nodes: FaceGraphNode[];
       edges: FaceGraphEdge[];
       nextId: number;
+      selfLoops: number;
     }>(
       (acc, e) => {
         const points = polylinePoints(roads, e.polylineIndex);
@@ -189,6 +210,16 @@ const buildFaceGraph = (roads: RoadGraph, grid: Grid): FaceGraph => {
         );
         const interior = distinct.slice(1, -1);
         if (interior.length === 0) {
+          // Both ends on one node, and no interior vertex to stretch it into a
+          // chain: the edge leaves that node and arrives back at it, bounding
+          // nothing a face walk can follow. Its two half-edges would carry a zero
+          // direction, which is exactly what `graph/faces.ts`'s `half` had to grow
+          // a class for — dropped here so the degenerate geometry does not exist
+          // rather than merely being sorted safely.
+          if (e.a === e.b) {
+            acc.selfLoops += 1;
+            return acc;
+          }
           acc.edges.push({ id: e.id, a: e.a, b: e.b });
           return acc;
         }
@@ -204,7 +235,7 @@ const buildFaceGraph = (roads: RoadGraph, grid: Grid): FaceGraph => {
         });
         return acc;
       },
-      { nodes: [], edges: [], nextId: shapeIdBase }
+      { nodes: [], edges: [], nextId: shapeIdBase, selfLoops: 0 }
     );
 
   // Based past every road edge, including the ones the chain filter dropped.
@@ -221,6 +252,7 @@ const buildFaceGraph = (roads: RoadGraph, grid: Grid): FaceGraph => {
   return {
     nodes: [...endpointNodes, ...chains.nodes, ...border.nodes],
     edges: [...chains.edges, ...border.edges],
+    selfLoopsDropped: chains.selfLoops,
   };
 };
 
@@ -618,7 +650,17 @@ export const blocksStage = (
   stream: RngStream,
   observe: DiscardObserver = () => undefined
 ): BlockLayer => {
-  const { nodes, edges } = buildFaceGraph(input.roads, input.grid);
+  const { nodes, edges, selfLoopsDropped } = buildFaceGraph(
+    input.roads,
+    input.grid
+  );
+  if (selfLoopsDropped > 0) {
+    observe({
+      stage: "blocks",
+      reason: "self-loop-edge",
+      count: selfLoopsDropped,
+    });
+  }
   const arterialEdgeIds = new Set(input.roads.edges.map((e) => e.id));
   const traversal = traverseFaces(nodes, edges);
   const posById = new Map(nodes.map((n) => [n.id, n.pos]));
@@ -636,17 +678,19 @@ export const blocksStage = (
   // above is unioned in without being joined to the arterials, so an arterial
   // loop that reaches no border edge is its own component and hands back its own
   // reversed boundary; excluding one face by index left that one to become a
-  // block, inside-out — one on `akiba-02` at the golden parameters, carrying 5
-  // lots zoned casino, and four on `akiba-01` at 512 cells carrying 18.
+  // block, inside-out. Re-measured 2026-08-04, after the self-loop fix: still four
+  // on `akiba-01` at 512 cells, one on `akiba-02`, and at 256 cells four, one and
+  // two across the three seeds. None at the golden parameters any more — the one
+  // that used to appear on `akiba-02` there was a leaf of the rotation the
+  // self-loop had scrambled — so the golden suite no longer exercises this branch
+  // and the resolutions above are what do.
   //
   // Except when it is folded, which `isOuter` cannot tell apart: a bowtie's two
   // lobes contribute opposite signs to the shoelace sum, so a self-crossing face
   // can total negative and look reversed. Dropping those here would take them
   // out before the fold filter below ever sees them, and the engine would stop
-  // reporting discards it used to report — measured: face 1 on `akiba-02` at the
-  // golden parameters is self-intersecting with a signed area of -13440 and
-  // accounts for 3 of that seed's folded blocks. So a folded outer face still
-  // enters, and the filter below is still what rejects it, through `observe`.
+  // reporting discards it used to report. So a folded outer face still enters, and
+  // the filter below is still what rejects it, through `observe`.
   const regions = traversal.faces
     .map((face) => ({
       isOuter: face.isOuter,
@@ -684,22 +728,25 @@ export const blocksStage = (
    * A folded ring is not a block, so it does not become one.
    *
    * The face traversal can hand back a self-crossing cycle where the arterial
-   * graph is degenerate — a zero-length edge, or two edges leaving a node along
-   * the same bearing, both of which give `comparePseudoAngle` nothing to order
-   * by. Subdivision then cuts that fold into leaves that are folded too.
+   * graph is degenerate — two edges leaving a node along the same bearing gives
+   * `comparePseudoAngle` nothing to order by, and it resolves the tie by target
+   * node id. Subdivision then cuts that fold into leaves that are folded too.
+   * (A zero-length link used to belong on that list and no longer does: it made
+   * the comparator inconsistent rather than merely undiscriminating, which is a
+   * different and worse failure — see `graph/faces.ts`'s `half`.)
    *
    * The area floor does not stop them: a bowtie's two lobes contribute opposite
    * signs to the shoelace sum, so a fold can report a healthy positive area
    * while enclosing nothing of the kind. `lots.ts` does reject what it finds,
    * but only after insetting, and only for the ones whose inset also folds — by
    * then `zoning` has already scored the block from a centroid that can sit
-   * outside it. Before this filter existed, 7 folded blocks reached them on
-   * `akiba-02` and 1 on `akiba-03` at the golden parameters; chaining the
-   * arterials above took `akiba-02` to 5, and what this removes now is 5 and 1 —
-   * counted under vitest, which is the engine the goldens are taken with. A
-   * `bun` script reports 2 on `akiba-02`; ADR-0027 calls cross-engine
-   * reproducibility "designed for but only opportunistically tested" and this is
-   * one of the places it is not.
+   * outside it.
+   *
+   * What this removes, re-measured 2026-08-04 after the self-loop fix: 1 on
+   * `akiba-02` and 1 on `akiba-03` at the golden parameters, rising to 9, 9 and 4
+   * at 512 cells. `akiba-02` read 5 here before that fix, four of them leaves of
+   * the scrambled rotation. Counted under vitest, and bun now agrees seed for seed
+   * — which it did not before, reporting 2 where vitest reported 5.
    *
    * Filtered here, before `adjacencyOf` and the ring pool, because every id
    * downstream is an index into this array: dropping a leaf later would leave
@@ -723,8 +770,10 @@ export const blocksStage = (
    * simple — no crossing for `isSelfIntersecting` to find — while still wound
    * the wrong way, so it encloses everything except the ground it covers. Its
    * area is then read as positive by `area`, its centroid lands outside it, and
-   * `zoning` scores it: one such block on `akiba-02` at the golden parameters
-   * carried 5 lots zoned casino, four on `akiba-01` at 512 cells carried 18.
+   * `zoning` scores it. Re-measured 2026-08-04 after the self-loop fix: four such
+   * blocks on `akiba-01` at 512 cells and one on `akiba-02`, none on any seed at
+   * the golden parameters — so this branch is live but the golden suite does not
+   * reach it, and `pipeline.test.ts`'s pinned discard lists no longer name it.
    *
    * Rejected here rather than by dropping the parent face, because a reversed
    * face that also crosses itself is the source of folded leaves this stage has

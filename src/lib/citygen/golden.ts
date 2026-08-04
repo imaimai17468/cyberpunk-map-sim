@@ -24,6 +24,15 @@ import type { StageName } from "@/entities/city";
  * output changed, which is either the point of your change or a bug.
  * `GOLDEN_PARAMS` pins the configuration they were taken at; measuring at a
  * different `sizeM`/`cells` produces different hashes and proves nothing.
+ *
+ * They are also single-engine, and that mattered once. Until 2026-08-04 these
+ * values were reproducible under vitest and not under bun — `akiba-02` came out
+ * `ecf932279c0da1a6` here and `f371616bf0c27639` there — because a self-loop
+ * arterial made the face rotation's comparator non-transitive and left
+ * `Array.prototype.sort` free to choose (see `graph/faces.ts`'s `half`). A golden
+ * cannot see that on its own: it certifies one engine against itself. What found
+ * it was running the same seed under a second engine and diffing per stage, which
+ * is worth doing after any change to the traversal or the geometry predicates.
  */
 
 export const GOLDEN_PARAMS = {
@@ -52,8 +61,13 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       buildings: "28d6ff17972f033c",
     },
   },
+  // Regenerated 2026-08-04 for the self-loop determinism fix, and only this seed
+  // moved: `akiba-01` and `akiba-03` reproduce their previous hashes exactly,
+  // because neither carried a self-loop arterial. The five values that changed are
+  // `blocks` and the three stages downstream of it, plus the whole-model hash —
+  // which is the shape a `blocks` change is supposed to have.
   "akiba-02": {
-    contentHash: "ecf932279c0da1a6",
+    contentHash: "c4d1ffd11cfe9609",
     stageHashes: {
       terrain: "7d83a8eb1f9050c4",
       hydrology: "b201772eac6cf3ee",
@@ -61,10 +75,10 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       anchors: "49bdb410abab47d6",
       social: "8cb24c78561f0b8e",
       arterials: "7d276084cee147a5",
-      blocks: "15fbfcc1766295c7",
-      zoning: "1f6463585176ee13",
-      lots: "ec0fd172328c1df9",
-      buildings: "0f4ddf51b71d0112",
+      blocks: "3484c31d357ba5c3",
+      zoning: "bd368aad40fa0a0d",
+      lots: "63f40ebb8cb5b609",
+      buildings: "5972fc49766224cb",
     },
   },
   "akiba-03": {

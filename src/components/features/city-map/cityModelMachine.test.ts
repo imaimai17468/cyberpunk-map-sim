@@ -75,6 +75,7 @@ const model = (seed: string): CityModel => ({
     buildings: "0",
   },
   contentHash: `hash-${seed}`,
+  discards: [],
 });
 
 /** Replay a sequence of events from the initial state. */

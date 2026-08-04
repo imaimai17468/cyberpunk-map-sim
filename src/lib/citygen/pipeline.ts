@@ -1,10 +1,13 @@
 import {
   type CityModel,
   DISTRICT_KINDS,
+  type Discard,
   type DiscardObserver,
   type DistrictKind,
   type FieldStack,
   type GenerationParams,
+  PROGRESS_STEPS,
+  type ProgressStep,
   STAGE_NAMES,
   type StageName,
   generationParamsSchema,
@@ -31,6 +34,11 @@ import { zoningStage } from "./stages/zoning";
  * one stage cannot shift another's sequence — that independence is what makes
  * a per-stage hash meaningful. A golden-hash failure therefore names the first
  * divergent stage rather than just reporting that the city changed.
+ *
+ * Ten of the eleven are hashed and all eleven are reported, which is why
+ * `STAGE_NAMES` and `PROGRESS_STEPS` are separate lists: `assemble` produces the
+ * instance buffers rather than a stage output of its own, and those are already
+ * covered by the `buildings` hash.
  */
 
 /** Internal: `GenerateOptions` is the surface a caller names. */
@@ -79,15 +87,25 @@ export const generateCity = (
   options: GenerateOptions = {}
 ): CityModel => {
   const onProgress = options.onProgress ?? noop;
-  const onDiscard = options.onDiscard ?? ignore;
+  const forward = options.onDiscard ?? ignore;
+  // Recorded on the way past, so the model carries the same account the observer
+  // streams. Recorded first, so a caller observer that throws cannot leave the
+  // model disagreeing with what the stages actually reported.
+  const collected: Discard[] = [];
+  const onDiscard: DiscardObserver = (discard) => {
+    collected.push(discard);
+    forward(discard);
+  };
   // The schema is the boundary: a caller (or a postMessage) cannot smuggle an
   // out-of-range grid past this point.
   const params = generationParamsSchema.parse(rawParams);
   const grid = gridOf(params);
   const master = masterSeed(params.seed);
   const streamFor = (name: StageName) => stageStream(master, name);
-  const report = (name: StageName): void => {
-    onProgress(STAGE_NAMES.indexOf(name));
+  // Indexed into `PROGRESS_STEPS`, not `STAGE_NAMES`: the reported vocabulary has
+  // an `assemble` step the hash vocabulary does not. The first ten indices agree.
+  const report = (name: ProgressStep): void => {
+    onProgress(PROGRESS_STEPS.indexOf(name));
   };
 
   report("terrain");
@@ -152,6 +170,7 @@ export const generateCity = (
     streamFor("buildings")
   );
 
+  report("assemble");
   const instances = packInstances(buildingLayer.buildings);
 
   // Per-stage bytes, in the fixed stage order, so a divergence is localised.
@@ -251,5 +270,6 @@ export const generateCity = (
     instances,
     stageHashes,
     contentHash: hashConcat(STAGE_NAMES.map((name) => stageBytes[name])),
+    discards: collected,
   };
 };

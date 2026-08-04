@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { Field2D, RoadGraph, TerrainLayer, Vec2 } from "@/entities/city";
+import type {
+  Discard,
+  Field2D,
+  RoadGraph,
+  TerrainLayer,
+  Vec2,
+} from "@/entities/city";
 import { BLOCKS } from "../constants";
 import { streamFromSeedWord } from "../rng/xoshiro";
 import { blockAreaTargetAt, blocksStage, cutDirectionAt } from "./blocks";
@@ -100,6 +106,56 @@ const SQUARE: readonly Vec2[] = [
   { x: 400, y: 100 },
   { x: 0, y: 100 },
 ];
+
+/**
+ * An arterial whose two ends resolved to one node, with no interior vertex to
+ * stretch it into a chain — the shape `buildFaceGraph` now refuses.
+ *
+ * Its polyline has real length; what makes it a self-loop is that `a` and `b` name
+ * the same node, which is what `resolveNodeId`'s 12 m snap can produce. Left in,
+ * its two half-edges carry no direction and sit in node 0's rotation, which is how
+ * one seed's block layout became engine-dependent.
+ */
+const selfLoopRoads: RoadGraph = {
+  nodes: [{ id: 0, pos: { x: 100, y: 100 } }],
+  edges: [
+    {
+      id: 0,
+      a: 0,
+      b: 0,
+      cls: "avenue",
+      crossing: "none",
+      polylineIndex: 0,
+      strip: false,
+    },
+  ],
+  polylines: {
+    coords: Float32Array.from([100, 100, 108, 100]),
+    starts: Uint32Array.from([0, 2]),
+  },
+};
+
+describe("blocksStage given a self-loop arterial", () => {
+  it("should report it as a discard when the edge's ends name one node", () => {
+    const seen: Discard[] = [];
+    blocksStage(inputOf({ roads: selfLoopRoads }), streamFromSeedWord(7), (d) =>
+      seen.push(d)
+    );
+    expect(seen).toContainEqual({
+      stage: "blocks",
+      reason: "self-loop-edge",
+      count: 1,
+    });
+  });
+
+  it("should keep bounding blocks by the map border when the loop is dropped", () => {
+    const layer = blocksStage(
+      inputOf({ roads: selfLoopRoads }),
+      streamFromSeedWord(7)
+    );
+    expect(layer.blocks.length).toBeGreaterThan(1);
+  });
+});
 
 describe("blockAreaTargetAt", () => {
   it("should return the largest target when urban intensity is zero", () => {

@@ -234,6 +234,27 @@ export const STAGE_NAMES = [
 export type StageName = (typeof STAGE_NAMES)[number];
 
 /**
+ * What the caller is told about progress — eleven steps, not `STAGE_NAMES`' ten.
+ *
+ * Two vocabularies because they answer different questions. `STAGE_NAMES` is the
+ * hash vocabulary: one entry per stage whose output is serialised and hashed, so
+ * a golden failure can name the stage that diverged. This is the *reporting*
+ * vocabulary, and it has one more member because the pipeline does one more piece
+ * of work: `assemble` packs the instance buffers after `buildings`.
+ *
+ * Conflating them left that work structurally unobservable. `pipeline.ts` had
+ * always described itself as composing eleven stages and `stages/types.ts` numbers
+ * `assemble` as the eleventh, but progress was reported by looking a name up in the
+ * ten-entry hash list — so the last thing the outside heard was "buildings
+ * started", and instance packing plus ten hashes over the full field data ran with
+ * the UI still showing the previous step. The first ten indices are unchanged, so
+ * this is additive for anything already reading the number.
+ */
+export const PROGRESS_STEPS = [...STAGE_NAMES, "assemble"] as const;
+/** @public published domain vocabulary: the name a new reported step is added to */
+export type ProgressStep = (typeof PROGRESS_STEPS)[number];
+
+/**
  * The things the engine throws away, named.
  *
  * Every stage drops something — a polyline vertex that repeats its
@@ -258,6 +279,16 @@ export const DISCARD_REASONS = [
   "zero-length-edge",
   /** A second edge tracing a stretch of road another edge already traced. */
   "duplicate-route",
+  /**
+   * An edge whose two ends resolved to one node, so it leaves that node and
+   * returns to it without bounding anything a face walk can follow.
+   *
+   * Distinct from `zero-length-edge`: the road has real length, and it is the
+   * 12 m node snap that merged its ends. Reported rather than silently skipped
+   * because its half-edges have no direction, and a directionless entry in a
+   * rotation sorted by angle is what made that sort engine-dependent.
+   */
+  "self-loop-edge",
   /** A block ring that crosses itself, whose area and centroid mean nothing. */
   "folded-block",
   /**
@@ -302,4 +333,19 @@ export interface CityModel {
   /** Per-stage content hash; a golden failure names each divergent stage. */
   readonly stageHashes: Readonly<Record<StageName, string>>;
   readonly contentHash: string;
+  /**
+   * Everything the run discarded, in the order the stages reported it.
+   *
+   * The same tallies `DiscardObserver` streams, kept on the model as well because
+   * the streaming channel had no consumer outside the tests: `worker.ts` passed
+   * only `onProgress`, so in the running app the engine's own account of what it
+   * threw away went nowhere. A field on the result crosses `postMessage` with
+   * everything else and needs no new lifecycle event to carry it.
+   *
+   * Deliberately outside `contentHash`. The hash answers "is this the same city",
+   * and a change to what the engine chooses to report is not a change to the city
+   * — mixing them in would make every reporting edit look like a regression in
+   * `golden.ts`. `pipeline.test.ts` pins the discards separately for that reason.
+   */
+  readonly discards: readonly Discard[];
 }

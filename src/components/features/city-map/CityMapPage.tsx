@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { STAGE_NAMES } from "@/entities/city";
+import { PROGRESS_STEPS } from "@/entities/city";
 import { DistrictLegend } from "./DistrictLegend";
 import { MapStatus } from "./MapStatus";
 import { RoadLegend } from "./RoadLegend";
@@ -84,7 +84,7 @@ export function CityMapPage() {
             {state.phase === "booting"
               ? "Starting the renderer…"
               : busy
-                ? `Generating ${STAGE_NAMES[state.stageIndex] ?? "the city"}`
+                ? `Generating ${PROGRESS_STEPS[state.stageIndex] ?? "the city"}`
                 : "Press Generate to build a city."}
           </p>
         </div>

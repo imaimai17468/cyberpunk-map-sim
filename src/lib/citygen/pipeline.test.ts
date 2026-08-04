@@ -4,6 +4,7 @@ import {
   type DistrictKind,
   type Discard,
   type GenerationParams,
+  PROGRESS_STEPS,
   type PolygonPool,
   type Vec2,
 } from "@/entities/city";
@@ -73,6 +74,29 @@ describe("generateCity", () => {
       buffer.matrices.some((v) => Number.isNaN(v))
     );
     expect(bad).toBe(false);
+  });
+});
+
+/**
+ * Progress covers every step, including the one that used to be silent.
+ *
+ * `assemble` runs after `buildings` and was never reported, so the last thing a
+ * caller heard was "buildings started" while instance packing and ten hashes over
+ * the full field data still ran. Asserted as the exact index sequence rather than
+ * as a count, because the property that matters is that each step is announced
+ * once, in order, and that the indices address `PROGRESS_STEPS`.
+ */
+describe("progress reporting", () => {
+  it("should announce every step once in order when generating", () => {
+    const steps: number[] = [];
+    generateCity(params(), { onProgress: (i) => steps.push(i) });
+    expect(steps).toEqual(PROGRESS_STEPS.map((_step, index) => index));
+  });
+
+  it("should name assemble as the last reported step when generating", () => {
+    const steps: number[] = [];
+    generateCity(params(), { onProgress: (i) => steps.push(i) });
+    expect(PROGRESS_STEPS[steps[steps.length - 1]]).toBe("assemble");
   });
 });
 
@@ -330,18 +354,26 @@ describe("golden hashes", () => {
    * decision instead of asking about it. Fixing the counts here means the
    * engine's answer and the committed answer cannot drift apart silently.
    *
-   * Taken under vitest, which is what asserts them. A script run under bun
-   * reports 2 folded blocks here rather than 5 and no inside-out block at all —
-   * ADR-0027 calls cross-engine reproducibility "designed for but only
-   * opportunistically tested", and this is what that costs in practice.
-   * Regenerate these the same way the goldens are regenerated, from inside the
-   * test runner, or the numbers will disagree with the runner that checks them.
+   * Taken under vitest, which is what asserts them — and as of 2026-08-04 bun
+   * agrees, seed for seed and stage for stage. It did not before: the same seed
+   * reported 5 folded blocks and 1 inside-out block here against 2 and none there,
+   * because a self-loop arterial made the face rotation's comparator
+   * non-transitive and `Array.prototype.sort` was free to resolve it differently
+   * per engine (`graph/faces.ts`'s `half`). Regenerate these from inside the test
+   * runner, as with the goldens, and re-check a second engine after touching the
+   * traversal.
    *
    * The list is asserted whole rather than per reason, which is what caught a
    * regression these counts would otherwise have hidden: excluding a folded
    * outer face before subdivision took `folded-block` from 5 to 2 and looked
    * like an improvement, when 3 of those discards had merely stopped being
    * reported. Asserting the sequence means a reason that disappears fails here.
+   *
+   * `folded-block` reads 1 rather than 5 and `inside-out-block` is absent for the
+   * same reason the hashes moved: the one self-loop was producing four of the
+   * folds and the inside-out block, so removing it removed them. That is a change
+   * in what the engine builds, not in what it chooses to mention — the seed's
+   * blocks really are different now, which is why `golden.ts` moved with it.
    */
   it("should report every discard it made when one is observed", () => {
     const seen: Discard[] = [];
@@ -351,8 +383,37 @@ describe("golden hashes", () => {
     expect(seen).toEqual([
       { stage: "arterials", reason: "zero-length-edge", count: 259 },
       { stage: "arterials", reason: "duplicate-route", count: 58 },
-      { stage: "blocks", reason: "folded-block", count: 5 },
-      { stage: "blocks", reason: "inside-out-block", count: 1 },
+      { stage: "blocks", reason: "self-loop-edge", count: 1 },
+      { stage: "blocks", reason: "folded-block", count: 1 },
+    ]);
+  });
+
+  /**
+   * The streamed account and the account on the model are the same account.
+   *
+   * Asserted against the observer rather than against a copy of the numbers,
+   * because a second literal list is a second thing to keep in step — and the
+   * whole reason `discards` exists on the model is that a figure reconstructed
+   * outside the engine is how several wrong ones got into this repo.
+   */
+  it("should carry the discards it streamed on the model when one is observed", () => {
+    const seen: Discard[] = [];
+    const generated = generateCity(
+      params({ seed: "akiba-02", ...GOLDEN_PARAMS }),
+      { onDiscard: (d) => seen.push(d) }
+    );
+    expect(generated.discards).toEqual(seen);
+  });
+
+  /** No observer attached is not a reason for the model to know less. */
+  it("should carry the discards on the model when nobody is observing", () => {
+    expect(
+      generateCity(params({ seed: "akiba-02", ...GOLDEN_PARAMS })).discards
+    ).toEqual([
+      { stage: "arterials", reason: "zero-length-edge", count: 259 },
+      { stage: "arterials", reason: "duplicate-route", count: 58 },
+      { stage: "blocks", reason: "self-loop-edge", count: 1 },
+      { stage: "blocks", reason: "folded-block", count: 1 },
     ]);
   });
 

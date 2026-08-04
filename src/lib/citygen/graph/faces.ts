@@ -63,15 +63,54 @@ interface RotationPosition {
   readonly total: number;
 }
 
-/** Which half-plane a direction vector falls in, for pseudo-angle sorting. */
-const half = (dx: number, dy: number): 0 | 1 =>
-  dy < 0 || (dy === 0 && dx < 0) ? 1 : 0;
+/**
+ * Which half-plane a direction vector falls in, for pseudo-angle sorting.
+ *
+ * The zero vector gets class 2 — its own, ordered after both real half-planes —
+ * rather than falling into half 0 with the directions pointing up and right.
+ * Sharing a class with real directions is what made `comparePseudoAngle`
+ * non-transitive, and non-transitivity is not a cosmetic defect here: an
+ * inconsistent comparator makes `Array.prototype.sort` implementation-defined,
+ * so the rotation, the faces walked from it, and every stage downstream of
+ * `blocks` came out different on different engines.
+ *
+ * Measured on `akiba-02` at the golden parameters, before this class existed:
+ * node 28 carried two self-loop half-edges at (0, 0) next to three real ones,
+ * the group admitted twelve violating ordered triples, and half-edges 149, 151
+ * (a self-loop) and 152 ordered 149 < 151 < 152 < 149. `generateCity` then
+ * returned content hash `ecf932279c0da1a6` under vitest and
+ * `f371616bf0c27639` under bun for that one seed, diverging first at the
+ * `blocks` stage hash while `terrain` through `arterials` matched exactly.
+ *
+ * A zero vector has no angle, so any position for it is arbitrary; what matters
+ * is that it holds still and stops dragging the real directions out of order.
+ * `blocks.ts` drops the self-loop edges that produced the measured case, but this
+ * class is not made redundant by that: two *distinct* nodes resolving to one
+ * position hand the sort a zero vector without being a self-loop, and the sort
+ * has to be a total order for whatever it is handed rather than for what one
+ * caller currently sends.
+ */
+const half = (dx: number, dy: number): 0 | 1 | 2 =>
+  dx === 0 && dy === 0 ? 2 : dy < 0 || (dy === 0 && dx < 0) ? 1 : 0;
 
 /**
  * Compares two direction vectors by pseudo-angle: first by half-plane, then
  * by the sign of their cross product within a half-plane. This orders
  * vectors identically to sorting by true angle around the origin, without
  * computing an angle at all (no `atan2`, no division, no trig).
+ *
+ * A strict weak ordering for every input, zero vectors included — which is what
+ * `Array.prototype.sort` requires to be deterministic at all: "if comparefn ... is
+ * not a consistent comparison function for the elements of the array, the
+ * behaviour of sort is implementation-defined", and transitivity is one of the
+ * properties consistency requires
+ * (https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/sort).
+ * Stability, guaranteed since ES2019, does not help: it fixes what happens to
+ * elements the comparator calls equal, not what happens when it contradicts itself.
+ *
+ * Within a class the cross-product comparison is a total order because each real
+ * class spans a half-open 180 degrees, so the angle difference between any two of
+ * its members stays inside (-180, 180) and the cross product's sign tracks it.
  */
 export const comparePseudoAngle = (
   ax: number,
@@ -247,9 +286,11 @@ const toFace = (
  * the map border into the arterial graph without joining them, so an arterial
  * loop reaching no border edge is exactly that second component, and its
  * boundary became a block — inside-out, and subdivision preserves orientation,
- * so its leaves were inside-out too. Measured on 2026-08-04: one such block on
- * `akiba-02` at the golden parameters carrying 5 lots, and four on `akiba-01` at
- * 512 cells carrying 18, all zoned casino.
+ * so its leaves were inside-out too. Re-measured 2026-08-04 after the self-loop
+ * fix, counting the blocks `blocks.ts` rejects as `inside-out-block`: four on
+ * `akiba-01` at 512 cells, one on `akiba-02`, and four, one and two across the
+ * three seeds at 256 cells. None at the golden parameters — `akiba-02`'s one there
+ * was a leaf of the rotation the self-loop had scrambled, so it went with it.
  *
  * `outerFaceIndex` still names the most negative face, which for a connected
  * embedding is the same answer it always gave.

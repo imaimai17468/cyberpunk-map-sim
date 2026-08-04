@@ -23,6 +23,7 @@ import {
   samplePolygonInteriorPoints,
   splitPolygon,
 } from "../geometry/polygon";
+import { polylinePoints } from "./roadGeometry";
 import {
   blendLineTensors,
   directionFromLineTensor,
@@ -104,21 +105,103 @@ const borderGraph = (
   return { nodes, edges };
 };
 
-/** Arterial nodes and edges, plus the border rectangle. */
+/**
+ * The arterial network as the face traversal sees it, bends included.
+ *
+ * It did not used to include them. The graph was built from endpoint nodes
+ * alone, so a block boundary was the straight chord between an arterial's two
+ * ends while the road itself bowed away from it. Measured on the three golden
+ * seeds at 2048 m and 512 cells — the `cells` default in `entities/city`, so
+ * what the app actually generates — a bending arterial's furthest interior
+ * vertex stands a median of 45, 82 and 47 m off its own chord and up to 307 m,
+ * and 61% to 68% of live arterial length runs more than 20 m away from it. The
+ * road was simply not where the city thought it was. Buildings stayed out of it
+ * only because `buildings.ts` sweeps the real polyline afterwards in
+ * `clearOfRoads` and rejects candidates it finds there; nothing in the block
+ * layout knew.
+ *
+ * So each arterial enters as a chain through its own polyline vertices. Every
+ * link keeps the road's edge id, which is what `lots.ts` looks up to price the
+ * carriageway inset, and `Face.edgeIds` therefore still names the road rather
+ * than some fragment of it. Repeating an id across a chain does not confuse
+ * `traverseFaces`: it keys half-edges off each edge's index in the array it is
+ * handed, so identity never comes from the id, and it consults the id only as
+ * the third tie-break in the rotation sort, after pseudo-angle and after the
+ * target node id.
+ *
+ * Reaching that tie-break needs two links of one chain to join the *same* pair
+ * of node ids, which needs the arterial's own two ends to resolve to one node.
+ * That is not hypothetical: `resolveNodeId` merges ends sharing a 12 m bucket
+ * (`ARTERIALS.nodeSnapM`), and `splitIntoEdgeVertexLists` deliberately keeps a
+ * piece that returns to where it started while enclosing real ground — its doc
+ * records one such loop on `akiba-01` at 512 cells, the survivor among 170
+ * self-joining edges once the 169 zero-length ones were dropped. A single
+ * interior vertex on such an edge gives two links between the same pair, and
+ * the sort then has nothing to separate them by.
+ *
+ * What comes back from that is a two-vertex cycle, which the `ring.length >= 3`
+ * filter below drops before subdivision — measured, not reasoned: fed one
+ * self-joining avenue carrying one interior vertex, the stage bounds no block by
+ * it and reports no discard, while the same edge carrying two interior vertices
+ * yields its triangle. So the degenerate case is contained rather than handled,
+ * and it leaves no trace in the `DiscardObserver` channel the way a folded block
+ * does.
+ *
+ * Consecutive duplicate vertices are dropped on the way in. A zero-length link
+ * would hand `comparePseudoAngle` a zero vector and there is no angle to sort
+ * by. They are rare rather than absent: one interior vertex across the three
+ * golden seeds at the golden parameters, and none at 512 cells. Rarity is not
+ * the measure though — with the filter removed, `blocks.test.ts`'s
+ * repeated-vertex fixture stops bounding a block at all.
+ */
+// similarity-ignore: paired with the viewer's createRoadLines because both are long reduce/flatMap builders, which is what no-loops makes every function here look like
 const buildFaceGraph = (
   roads: RoadGraph,
   grid: Grid
 ): { nodes: readonly FaceGraphNode[]; edges: readonly FaceGraphEdge[] } => {
-  const arterialNodes = roads.nodes.map((n) => ({ id: n.id, pos: n.pos }));
-  const arterialEdges = roads.edges
+  const endpointNodes = roads.nodes.map((n) => ({ id: n.id, pos: n.pos }));
+  const shapeIdBase = endpointNodes.reduce((m, n) => Math.max(m, n.id), -1) + 1;
+
+  const chains = roads.edges
     .filter((e) => e.a >= 0 && e.b >= 0)
-    .map((e) => ({ id: e.id, a: e.a, b: e.b }));
-  const nodeIdBase = arterialNodes.reduce((m, n) => Math.max(m, n.id), -1) + 1;
-  const edgeIdBase = arterialEdges.reduce((m, e) => Math.max(m, e.id), -1) + 1;
-  const border = borderGraph(grid, nodeIdBase, edgeIdBase);
+    .reduce<{
+      nodes: FaceGraphNode[];
+      edges: FaceGraphEdge[];
+      nextId: number;
+    }>(
+      (acc, e) => {
+        const points = polylinePoints(roads, e.polylineIndex);
+        const distinct = points.filter(
+          (p, i) =>
+            i === 0 ||
+            Math.abs(p.x - points[i - 1].x) > 1e-6 ||
+            Math.abs(p.y - points[i - 1].y) > 1e-6
+        );
+        const interior = distinct.slice(1, -1);
+        if (interior.length === 0) {
+          acc.edges.push({ id: e.id, a: e.a, b: e.b });
+          return acc;
+        }
+        const ids = interior.map((pos, i) => {
+          acc.nodes.push({ id: acc.nextId + i, pos });
+          return acc.nextId + i;
+        });
+        acc.nextId += ids.length;
+        [e.a, ...ids, e.b].forEach((from, i, chain) => {
+          if (i + 1 < chain.length) {
+            acc.edges.push({ id: e.id, a: from, b: chain[i + 1] });
+          }
+        });
+        return acc;
+      },
+      { nodes: [], edges: [], nextId: shapeIdBase }
+    );
+
+  const edgeIdBase = chains.edges.reduce((m, e) => Math.max(m, e.id), -1) + 1;
+  const border = borderGraph(grid, chains.nextId, edgeIdBase);
   return {
-    nodes: [...arterialNodes, ...border.nodes],
-    edges: [...arterialEdges, ...border.edges],
+    nodes: [...endpointNodes, ...chains.nodes, ...border.nodes],
+    edges: [...chains.edges, ...border.edges],
   };
 };
 
@@ -558,11 +641,13 @@ export const blocksStage = (
    * while enclosing nothing of the kind. `lots.ts` does reject what it finds,
    * but only after insetting, and only for the ones whose inset also folds — by
    * then `zoning` has already scored the block from a centroid that can sit
-   * outside it. On `main` at the golden parameters this let 7 folded blocks
-   * through on `akiba-02` and 1 on `akiba-03` — counted under vitest, which is
-   * the engine the goldens are taken with. A `bun` script reports different
-   * numbers here; ADR-0027 calls cross-engine reproducibility "designed for but
-   * only opportunistically tested" and this is one of the places it is not.
+   * outside it. Before this filter existed, 7 folded blocks reached them on
+   * `akiba-02` and 1 on `akiba-03` at the golden parameters; chaining the
+   * arterials above brought `akiba-02` down to 5, so what it removes now is 5
+   * and 1 — counted under vitest, which is the engine the goldens are taken
+   * with. A `bun` script reports 2 on `akiba-02`; ADR-0027 calls cross-engine
+   * reproducibility "designed for but only opportunistically tested" and this
+   * is one of the places it is not.
    *
    * Filtered here, before `adjacencyOf` and the ring pool, because every id
    * downstream is an index into this array: dropping a leaf later would leave

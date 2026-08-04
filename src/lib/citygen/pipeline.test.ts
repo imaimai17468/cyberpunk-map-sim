@@ -331,7 +331,7 @@ describe("golden hashes", () => {
    * engine's answer and the committed answer cannot drift apart silently.
    *
    * Taken under vitest, which is what asserts them. A script run under bun
-   * reports 2 folded blocks here rather than 7 — ADR-0027 calls cross-engine
+   * reports 2 folded blocks here rather than 5 — ADR-0027 calls cross-engine
    * reproducibility "designed for but only opportunistically tested", and this
    * is what that costs in practice. Regenerate these the same way the goldens
    * are regenerated, from inside the test runner, or the numbers will disagree
@@ -345,7 +345,7 @@ describe("golden hashes", () => {
     expect(seen).toEqual([
       { stage: "arterials", reason: "zero-length-edge", count: 259 },
       { stage: "arterials", reason: "duplicate-route", count: 58 },
-      { stage: "blocks", reason: "folded-block", count: 7 },
+      { stage: "blocks", reason: "folded-block", count: 5 },
     ]);
   });
 

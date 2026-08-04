@@ -53,7 +53,7 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
     },
   },
   "akiba-02": {
-    contentHash: "485fb4628832c71e",
+    contentHash: "97f0ffd28d41e7e0",
     stageHashes: {
       terrain: "7d83a8eb1f9050c4",
       hydrology: "b201772eac6cf3ee",
@@ -61,10 +61,10 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       anchors: "49bdb410abab47d6",
       social: "8cb24c78561f0b8e",
       arterials: "7d276084cee147a5",
-      blocks: "9c3135406bd1c0fe",
-      zoning: "8e8e22d01e9a2d9a",
-      lots: "c0e41c6b54095317",
-      buildings: "6382d3ac04682d14",
+      blocks: "5eabbbc6edc52eb2",
+      zoning: "dfda8223b98fa05a",
+      lots: "4e187d3605cf70d9",
+      buildings: "d470c74ca11c0948",
     },
   },
   "akiba-03": {

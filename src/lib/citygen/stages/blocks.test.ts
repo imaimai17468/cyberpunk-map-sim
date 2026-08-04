@@ -302,6 +302,150 @@ describe("blocksStage", () => {
 });
 
 /**
+ * A closed loop of four arterials, 80 m square, whose west side bows out
+ * through interior vertices supplied by the caller.
+ *
+ * A loop rather than a crossing pair because the border rectangle is unioned
+ * into the face graph without being joined to the arterials, so arterials only
+ * enclose a face where they close one among themselves.
+ *
+ * The loop's face is 7,600 m² against `BLOCKS.maxBlockAreaM2` of 9,000, so it
+ * is never subdivided and the block ring is the traversed face ring itself.
+ * That is what makes the chain observable through `blocksStage`, which is the
+ * only way in: `buildFaceGraph` is private to the stage.
+ */
+const BEND: Vec2 = { x: 170, y: 240 };
+
+const loopRoads = (westSide: readonly number[]): RoadGraph => {
+  const polylines: readonly (readonly number[])[] = [
+    [200, 200, 280, 200],
+    [280, 200, 280, 280],
+    [280, 280, 200, 280],
+    westSide,
+  ];
+  const starts = polylines.reduce<number[]>(
+    (acc, p) => {
+      acc.push(acc[acc.length - 1] + p.length / 2);
+      return acc;
+    },
+    [0]
+  );
+  return {
+    nodes: [
+      { id: 0, pos: { x: 200, y: 200 } },
+      { id: 1, pos: { x: 280, y: 200 } },
+      { id: 2, pos: { x: 280, y: 280 } },
+      { id: 3, pos: { x: 200, y: 280 } },
+    ],
+    edges: polylines.map((_unused, i) => ({
+      id: i,
+      a: i,
+      b: (i + 1) % 4,
+      cls: "avenue" as const,
+      crossing: "none" as const,
+      polylineIndex: i,
+      strip: false,
+    })),
+    polylines: {
+      coords: Float32Array.from(polylines.flat()),
+      starts: Uint32Array.from(starts),
+    },
+  };
+};
+
+/** The rings of every block the loop bounds, which is where the bend lands. */
+const arterialRingsOf = (
+  westSide: readonly number[]
+): readonly (readonly Vec2[])[] => {
+  const layer = blocksStage(
+    inputOf({ roads: loopRoads(westSide) }),
+    streamFromSeedWord(7)
+  );
+  return layer.blocks
+    .filter((block) => block.boundary.every((ref) => ref.kind === "arterial"))
+    .map((block) => {
+      const start = layer.polygons.starts[block.ringIndex];
+      const end = layer.polygons.starts[block.ringIndex + 1];
+      return Array.from({ length: end - start }, (_unused, i) => ({
+        x: layer.polygons.coords[(start + i) * 2],
+        y: layer.polygons.coords[(start + i) * 2 + 1],
+      }));
+    });
+};
+
+/** The arterial edge ids each loop-bounded block is priced against. */
+const arterialRefsOf = (
+  westSide: readonly number[]
+): readonly (readonly number[])[] => {
+  const layer = blocksStage(
+    inputOf({ roads: loopRoads(westSide) }),
+    streamFromSeedWord(7)
+  );
+  return layer.blocks
+    .filter((block) => block.boundary.every((ref) => ref.kind === "arterial"))
+    .map((block) =>
+      block.boundary.map((ref) => ref.refId).toSorted((a, b) => a - b)
+    );
+};
+
+describe("blocksStage with a bending arterial", () => {
+  const BOWED = [200, 280, BEND.x, BEND.y, 200, 200];
+
+  /**
+   * Both this test and the repeated-vertex one below assert per ring rather than
+   * over a filtered-down list, so that the ring count is pinned by the same
+   * expectation. Asserting "nothing lacks the bend" would also hold of no rings
+   * at all, and a regression that stopped the loop bounding anything — in the
+   * boundary-kind classification `arterialRingsOf` filters on, or in which face
+   * `withOuterFlag` calls outer — would empty the list rather than change a
+   * ring. `single-expect` is why this is one expectation and not two.
+   */
+  it("should carry the bend into every ring the loop bounds when an arterial bends", () => {
+    expect(
+      arterialRingsOf(BOWED).map((ring) =>
+        ring.some((p) => p.x === BEND.x && p.y === BEND.y)
+      )
+    ).toEqual([true, true]);
+  });
+
+  it("should bound the loop by a ring of five vertices when one side bends", () => {
+    expect(arterialRingsOf(BOWED).map((ring) => ring.length)).toEqual([5, 5]);
+  });
+
+  /**
+   * `lots.ts` resolves an `arterial` ref straight against `roads.edges` to
+   * price the carriageway inset, so a chain link that minted its own id would
+   * have the lot layer inset for a road that is not in the graph.
+   */
+  it("should name the road on both links when one arterial is chained", () => {
+    expect(arterialRefsOf(BOWED)).toEqual([
+      [0, 1, 2, 3, 3],
+      [0, 1, 2, 3, 3],
+    ]);
+  });
+
+  /**
+   * A repeated vertex is a zero-length link, and a zero-length link hands
+   * `comparePseudoAngle` a zero vector with no angle to sort by. Dropping the
+   * repeat on the way in is what keeps the rotation well-ordered; without that
+   * filter this fixture stops producing the bowed pentagon.
+   */
+  it("should ignore a repeated vertex when chaining an arterial", () => {
+    const rings = arterialRingsOf([
+      200,
+      280,
+      BEND.x,
+      BEND.y,
+      BEND.x,
+      BEND.y,
+      200,
+      200,
+    ]);
+    expect([rings.length, ...rings]).toEqual([2, ...arterialRingsOf(BOWED)]);
+  });
+});
+
+/**
  * The coastline cases. Neither uniform fixture reaches them: an all-dry map has
  * no water to test against, and an all-wet one rejects every cut on block
  * membership before the endpoint check runs.

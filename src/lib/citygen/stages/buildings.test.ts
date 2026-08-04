@@ -7,6 +7,7 @@ import {
   type GenerationParams,
   type Lot,
   type PolygonPool,
+  type PolylinePool,
   type RoadEdge,
   type RoadGraph,
   type TerrainLayer,
@@ -76,13 +77,15 @@ const buildPolygonPool = (
   ),
 });
 
-// similarity-ignore: a local fixture builder; sharing it with zoning.test.ts would couple two stages' test setups so that retuning one silently changes the other's fixtures.
+/**
+ * A local fixture builder, deliberately not shared with `zoning.test.ts`:
+ * sharing it would couple two stages' test setups so that retuning one silently
+ * changes the other's fixtures. Only the return *type* is shared, and it is the
+ * engine's own `PolylinePool` rather than a copy of its two fields.
+ */
 const polylinePool = (
   polylines: readonly (readonly Vec2[])[]
-): {
-  readonly coords: Float32Array;
-  readonly starts: Uint32Array;
-} => ({
+): PolylinePool => ({
   starts: Uint32Array.from(prefixSums(polylines.map((line) => line.length))),
   coords: Float32Array.from(
     polylines.flatMap((line) => line.flatMap((p) => [p.x, p.y]))

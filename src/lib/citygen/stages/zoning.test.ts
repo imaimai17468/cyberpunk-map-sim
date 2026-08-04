@@ -3,6 +3,7 @@ import type {
   FieldStack,
   GenerationParams,
   PolygonPool,
+  PolylinePool,
   RoadEdge,
   RoadGraph,
   TerrainLayer,
@@ -131,13 +132,14 @@ const multiRingPool = (rings: readonly (readonly Vec2[])[]): PolygonPool => {
   };
 };
 
-// similarity-ignore: a local fixture builder; see buildings.test.ts — kept separate so each stage's fixtures stay independent.
+/**
+ * A local fixture builder; see `buildings.test.ts` — kept separate so each
+ * stage's fixtures stay independent. The return type is the engine's own
+ * `PolylinePool`, which is what both were spelling out field by field.
+ */
 const polylinePool = (
   polylines: readonly (readonly Vec2[])[]
-): {
-  readonly coords: Float32Array;
-  readonly starts: Uint32Array;
-} => {
+): PolylinePool => {
   const starts = polylines.reduce<number[]>(
     (acc, line) => {
       acc.push(acc[acc.length - 1] + line.length);

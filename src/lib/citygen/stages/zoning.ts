@@ -256,15 +256,26 @@ const computeAffinities = (
 ];
 
 /**
+ * A district settled on, with how clear the call was.
+ *
+ * The margin travels with the district because the mode filter downstream reads
+ * it to decide what it may overturn. Named rather than written inline at both
+ * producers below: they decide differently — one scores, one applies the forced
+ * megablock rule — but `initialAssignment` returns `argmaxAffinity`'s value on
+ * one of its branches, so it is the same value, not a coincidence of shape.
+ */
+interface DistrictChoice {
+  readonly district: DistrictKind;
+  readonly margin: number;
+}
+
+/**
  * Highest-scoring district and its margin over the runner-up.
  * `toSorted` is a stable sort, so among exactly-tied scores the entry that
  * appeared first in `affinities` (the fixed evaluation order above) is the
  * one that ends up at index 0 — ties resolve identically every run.
  */
-// similarity-ignore: argmaxAffinity picks the winning district and initialAssignment applies the forced-megablock rule; they share a signature because both map a block to a label, not because they decide the same thing.
-const argmaxAffinity = (
-  affinities: readonly Affinity[]
-): { readonly district: DistrictKind; readonly margin: number } => {
+const argmaxAffinity = (affinities: readonly Affinity[]): DistrictChoice => {
   const sorted = affinities.toSorted((a, b) => b.score - a.score);
   return {
     district: sorted[0].district,
@@ -282,7 +293,7 @@ const initialAssignment = (
   megaSeeds: readonly Vec2[],
   sample: BlockFieldSample,
   stripAdjacency: number
-): { readonly district: DistrictKind; readonly margin: number } =>
+): DistrictChoice =>
   isMegaSeedBlock(ring, megaSeeds)
     ? { district: "megablock", margin: FORCED_DISTRICT_MARGIN }
     : argmaxAffinity(computeAffinities(sample, stripAdjacency));

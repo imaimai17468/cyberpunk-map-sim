@@ -80,15 +80,27 @@ const sampleField = (field: Field2D, p: Vec2): number =>
   bilinearSample(field, p.x, p.y);
 
 /**
+ * A planar graph as `traverseFaces` wants it handed over.
+ *
+ * Named because two builders below return it and both were declaring the shape
+ * inline. They are not the same operation — one fabricates the map rectangle,
+ * the other unions the arterials into it — but the thing they build is one
+ * thing, and a shape written twice is a shape one edit can split.
+ */
+interface FaceGraph {
+  readonly nodes: readonly FaceGraphNode[];
+  readonly edges: readonly FaceGraphEdge[];
+}
+
+/**
  * The four map corners plus the four border edges, unioned with the arterial
  * graph so the outermost regions are closed rather than unbounded.
  */
-// similarity-ignore: borderGraph fabricates the map rectangle and buildFaceGraph unions it with the arterials; they share a return shape because both feed traverseFaces, not because they do the same thing.
 const borderGraph = (
   grid: Grid,
   nodeIdBase: number,
   edgeIdBase: number
-): { nodes: readonly FaceGraphNode[]; edges: readonly FaceGraphEdge[] } => {
+): FaceGraph => {
   const s = grid.sizeM;
   const corners: readonly Vec2[] = [
     { x: 0, y: 0 },
@@ -155,10 +167,7 @@ const borderGraph = (
  * repeated-vertex fixture stops bounding a block at all.
  */
 // similarity-ignore: paired with the viewer's createRoadLines because both are long reduce/flatMap builders, which is what no-loops makes every function here look like
-const buildFaceGraph = (
-  roads: RoadGraph,
-  grid: Grid
-): { nodes: readonly FaceGraphNode[]; edges: readonly FaceGraphEdge[] } => {
+const buildFaceGraph = (roads: RoadGraph, grid: Grid): FaceGraph => {
   const endpointNodes = roads.nodes.map((n) => ({ id: n.id, pos: n.pos }));
   const shapeIdBase = endpointNodes.reduce((m, n) => Math.max(m, n.id), -1) + 1;
 

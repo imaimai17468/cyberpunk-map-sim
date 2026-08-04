@@ -133,31 +133,24 @@ const INITIAL_FBM_ACCUMULATOR: FbmAccumulator = {
 const normalizeAccumulator = (acc: FbmAccumulator): number =>
   acc.amplitudeSum > 0 ? acc.sum / acc.amplitudeSum : 0;
 
-/** One plain-fBm octave folded into the running accumulator. */
-const accumulateOctave = (
-  seed: number,
-  x: number,
-  y: number,
-  gain: number,
-  lacunarity: number,
-  acc: FbmAccumulator,
-  octave: number
-): FbmAccumulator => {
-  const value = noise2D(
-    octaveSeed(seed, octave),
-    x * acc.frequency,
-    y * acc.frequency
-  );
-  return {
-    sum: acc.sum + value * acc.amplitude,
-    amplitude: acc.amplitude * gain,
-    frequency: acc.frequency * lacunarity,
-    amplitudeSum: acc.amplitudeSum + acc.amplitude,
-  };
-};
+/**
+ * How an octave's raw sample is weighted before it is summed.
+ *
+ * The two variants differ in this and in nothing else, so it is the parameter
+ * rather than the function: plain and ridged fBm were two copies of the same
+ * octave fold and the same octave schedule, agreeing on the accumulator, the
+ * defaults and the normalizer, which is a shape one edit can make inconsistent.
+ */
+type OctaveTransform = (raw: number) => number;
 
-/** One ridged-multifractal octave (`1 - |n|`) folded into the accumulator. */
-const accumulateRidgedOctave = (
+const PLAIN: OctaveTransform = (raw) => raw;
+
+/** The "one dominant ridge" transform (design §3 stage 1). */
+const RIDGED: OctaveTransform = (raw) => 1 - Math.abs(raw);
+
+/** One octave folded into the running accumulator under `transform`. */
+const accumulateOctave = (
+  transform: OctaveTransform,
   seed: number,
   x: number,
   y: number,
@@ -171,9 +164,8 @@ const accumulateRidgedOctave = (
     x * acc.frequency,
     y * acc.frequency
   );
-  const ridged = 1 - Math.abs(raw);
   return {
-    sum: acc.sum + ridged * acc.amplitude,
+    sum: acc.sum + transform(raw) * acc.amplitude,
     amplitude: acc.amplitude * gain,
     frequency: acc.frequency * lacunarity,
     amplitudeSum: acc.amplitudeSum + acc.amplitude,
@@ -182,6 +174,26 @@ const accumulateRidgedOctave = (
 
 const octaveIndices = (octaves: number): readonly number[] =>
   Array.from({ length: octaves }, (_value, octave) => octave);
+
+/** The octave schedule both variants run: defaults, fold, normalize. */
+const foldOctaves = (
+  transform: OctaveTransform,
+  seed: number,
+  x: number,
+  y: number,
+  options: FbmOptions | undefined
+): number => {
+  const octaves = options?.octaves ?? DEFAULT_OCTAVES;
+  const lacunarity = options?.lacunarity ?? DEFAULT_LACUNARITY;
+  const gain = options?.gain ?? DEFAULT_GAIN;
+  return normalizeAccumulator(
+    octaveIndices(octaves).reduce<FbmAccumulator>(
+      (acc, octave) =>
+        accumulateOctave(transform, seed, x, y, gain, lacunarity, acc, octave),
+      INITIAL_FBM_ACCUMULATOR
+    )
+  );
+};
 
 /**
  * Fractal Brownian motion: `octaves` (default 6) layers of `noise2D` at
@@ -194,17 +206,7 @@ export const fbm2D = (
   x: number,
   y: number,
   options?: FbmOptions
-): number => {
-  const octaves = options?.octaves ?? DEFAULT_OCTAVES;
-  const lacunarity = options?.lacunarity ?? DEFAULT_LACUNARITY;
-  const gain = options?.gain ?? DEFAULT_GAIN;
-  const result = octaveIndices(octaves).reduce<FbmAccumulator>(
-    (acc, octave) =>
-      accumulateOctave(seed, x, y, gain, lacunarity, acc, octave),
-    INITIAL_FBM_ACCUMULATOR
-  );
-  return normalizeAccumulator(result);
-};
+): number => foldOctaves(PLAIN, seed, x, y, options);
 
 /**
  * Ridged-multifractal fBm: identical octave/lacunarity/gain shape as
@@ -217,17 +219,7 @@ export const ridgedFbm2D = (
   x: number,
   y: number,
   options?: FbmOptions
-): number => {
-  const octaves = options?.octaves ?? DEFAULT_OCTAVES;
-  const lacunarity = options?.lacunarity ?? DEFAULT_LACUNARITY;
-  const gain = options?.gain ?? DEFAULT_GAIN;
-  const result = octaveIndices(octaves).reduce<FbmAccumulator>(
-    (acc, octave) =>
-      accumulateRidgedOctave(seed, x, y, gain, lacunarity, acc, octave),
-    INITIAL_FBM_ACCUMULATOR
-  );
-  return normalizeAccumulator(result);
-};
+): number => foldOctaves(RIDGED, seed, x, y, options);
 
 export interface DomainWarpOptions {
   readonly amplitude: number;

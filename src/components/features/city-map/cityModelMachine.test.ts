@@ -53,6 +53,11 @@ const model = (seed: string): CityModel => ({
   blockPolygons: { coords: new Float32Array(0), starts: Uint32Array.from([0]) },
   lots: [],
   lotPolygons: { coords: new Float32Array(0), starts: Uint32Array.from([0]) },
+  grading: {
+    padZ: new Float32Array(0),
+    padded: new Uint8Array(0),
+    roadZ: new Float32Array(0),
+  },
   buildings: [],
   instances: {
     megabuilding: emptyInstances(),
@@ -72,6 +77,7 @@ const model = (seed: string): CityModel => ({
     blocks: "0",
     zoning: "0",
     lots: "0",
+    grading: "0",
     buildings: "0",
   },
   contentHash: `hash-${seed}`,

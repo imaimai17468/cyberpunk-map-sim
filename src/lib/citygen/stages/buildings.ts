@@ -5,6 +5,7 @@ import type {
   BuildingTier,
   DistrictKind,
   Field2D,
+  GradingLayer,
   Obb,
   PolygonPool,
   RoadGraph,
@@ -48,6 +49,8 @@ export interface BuildingsInput {
   readonly blocks: readonly Block[];
   readonly lotLayer: LotLayer;
   readonly roads: RoadGraph;
+  /** The levels stage 10 cut and filled to. See ADR-0028. */
+  readonly grading: GradingLayer;
 }
 
 const ringFromPool = (
@@ -339,8 +342,6 @@ const nearestStripSegment = (
 
 const sampleAt = (field: Field2D, grid: Grid, point: Vec2): number =>
   bilinearSample(field, point.x / grid.cellSizeM, point.y / grid.cellSizeM);
-
-const RELIEF_SAMPLE_SATELLITES = 4;
 
 /**
  * Interior samples for the water veto. The same value as the relief count
@@ -688,7 +689,7 @@ export const buildingsStage = (
   input: BuildingsInput,
   stream: RngStream
 ): BuildingLayer => {
-  const { context, blocks, lotLayer, roads } = input;
+  const { context, blocks, lotLayer, roads, grading } = input;
   const { fields, terrain, grid } = context;
   const districtOf = new Map(
     blocks.map((block) => [block.id, block.district] as const)
@@ -697,7 +698,7 @@ export const buildingsStage = (
     .filter((edge) => edge.strip)
     .flatMap((edge) => polylineSegments(roads, edge.polylineIndex));
 
-  const results: readonly LotResult[] = lotLayer.lots.map((lot) => {
+  const results: readonly LotResult[] = lotLayer.lots.map((lot, lotIndex) => {
     const ring = ringFromPool(lotLayer.polygons, lot.ringIndex);
     // Square to the street where the lot fronts one. `minimumAreaObb` takes
     // whatever angle the subdivision happened to leave, which is *usually*
@@ -716,13 +717,21 @@ export const buildingsStage = (
     }
     const district = requireDistrict(districtOf, lot.blockId);
     const archetype = DISTRICT_ARCHETYPE[district];
-    const samplePoints = samplePolygonInteriorPoints(
-      ring,
-      RELIEF_SAMPLE_SATELLITES
-    );
-    const elevations = samplePoints.map((p) =>
-      sampleAt(terrain.elevation, grid, p)
-    );
+    // On a graded lot the ground is one level by construction, so there is nothing
+    // to sample and nothing for the relief veto to reject — the earthwork already
+    // decided this parcel was buildable, using the same budget. Only an ungraded
+    // lot is measured, and it is measured at its own corners rather than at
+    // interior points: `samplePolygonInteriorPoints` places each sample halfway
+    // from the centroid to a vertex, so it reads a copy of the lot shrunk to half
+    // size and reported roughly half the true relief. That let 35% of corporate
+    // footprints — the tallest buildings on the map — stand on more than the 6 m
+    // this veto exists to reject.
+    const padded = grading.padded[lotIndex] === 1;
+    const elevations = padded
+      ? [grading.padZ[lotIndex]]
+      : [...ring, centroid(ring)].map((p) =>
+          sampleAt(terrain.elevation, grid, p)
+        );
     const minElevation = elevations.reduce((a, b) => Math.min(a, b));
     const maxElevation = elevations.reduce((a, b) => Math.max(a, b));
     const relief = maxElevation - minElevation;

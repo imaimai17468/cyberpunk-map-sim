@@ -1,7 +1,7 @@
 {
   "format_version": 1,
-  "snapshot_id": "deabec62743b43a705c94a18844248431c87270d06d48655d3301d671c264ea1",
-  "knowledge_version": 147,
+  "snapshot_id": "f8048223d1321744d60ea9f8f48c6edc648c8f5feaf570642d1b2fd265c449c4",
+  "knowledge_version": 148,
   "documents": [
     {
       "doc_id": "adr-0001",
@@ -299,6 +299,17 @@
       "template_origin": null,
       "source_path": null,
       "source_refs_json": null
+    },
+    {
+      "doc_id": "adr-0028",
+      "title": "Grading Is Vector Features, Not A Raster Edit",
+      "kind": "reference",
+      "content": "# 0028. Earthworks are vector features composed into the ground, not edits to the elevation field\n\n- Status: accepted\n- Date: 2026-08-05\n\n## Context\n\nThe generator did no land grading at all. Terrain was synthesised and every road\nand building was laid straight onto it, so the ground under the city was the ground\nas found. Measured on the three golden seeds at 2048 m and 512 cells: the median\nstreet run climbs 13.5% to 15.7% and a third of all runs pass 20%, against roughly\n12% as the most 道路構造令 第20条 permits any Japanese road; 77% to 84% of building\nfootprints stand on more than 2 m of relief; and because `baseZM` is the highest\npoint sampled in the lot, the downhill side of a building hangs a median 2.2 m to\n3.1 m clear of the ground, up to 24 m. Corporate towers — the tallest things on the\nmap — sit on the worst of it, 35% of them on more than 6 m of relief.\n\nThe obvious implementation is to grade the elevation field: level a patch under each\nlot, cut a corridor along each road. That was built and measured, and it is recorded\nhere because the measurements are the reason for this ADR rather than a footnote to\nit. It made the city worse. Unbounded gradient limiting excavated 80 m trenches; a\nsentinel returned for off-field samples read as sea level and cut the map-edge\narterials down to it; bounding the cut and fixing the sentinel still left hard walls\nalong both kerbs of every road, which are themselves gradients — p90 road gradient\n34% natural, 224% raster-graded, 68% after bounding, and 28% only once a smoothstep\nshoulder replaced the wall.\n\nTwo facts survived all of it. The field is 4 m per cell while lots are 10 m to 30 m\nacross, so a rasterised pad is a jagged blob smaller than its own lot and building\ncorners fall off the edge of it. And the viewer subsamples that field to roughly 16 m\nrender cells, so a lot-sized pad cannot be drawn at all, whatever is written into the\nfield. A uniform grid also cannot represent the crisp edge of a parcel at any\nresolution, because the edge is a polygon and the grid is not.\n\n## Decision\n\nGrading produces **vector features**, and the ground is **composed** from them.\n\n- A new `grading` stage runs after `lots` and writes nothing into the elevation\n  field. It emits one pad height per lot — balanced cut and fill, bounded by a cut\n  and fill budget, omitted for lots too broken to level — and one slope-limited\n  longitudinal profile per road edge.\n- The elevation field remains the natural ground. Nothing upstream is re-derived:\n  slope, water distance and centrality chose where the roads and districts went, and\n  that choice was made against the ground as found. Grading is what happens after the\n  decision, not an input to it.\n- `buildings` takes `baseZM` from the lot's pad, so a building is flush by\n  construction rather than by a sampling coincidence.\n- The viewer draws the ground as the terrain grid **plus** one flat mesh per pad and\n  road corridors carried at their own profile, each with a skirt down to the natural\n  surface — the retaining wall or batter. This is the pattern the renderer already\n  uses: a road ribbon is a separate mesh drawn over the terrain with polygon offset,\n  and a pad is that same idea applied to a lot.\n\n`geometry/simplify.ts`-style purity holds throughout: the stage is deterministic and\nRNG-free, and every height is a function of the natural field, the road graph and the\nlot rings.\n\n## Alternatives considered\n\n- **Grade the elevation field (raster).** Built and measured; the numbers above are\n  its. Rejected: the field's resolution is coarser than the features being graded and\n  the render mesh coarser still, so the operation cannot be seen even when it is\n  correct, and a grid cannot hold a parcel edge.\n- **Raise the field or render-mesh resolution.** Rejected: 512² is already 262,144\n  cells, the cost is quadratic, and it does not fix the parcel edge — only makes the\n  staircase finer.\n- **Grade only in the viewer, leaving the model untouched.** Rejected: `baseZM` is a\n  model value, and a building placed against ungraded ground while drawn against\n  graded ground is the float this ADR exists to remove.\n- **Leave the terrain alone and forbid steep ground.** Rejected: vetoing every lot and\n  road the terrain makes awkward empties the interesting half of the map, and a city\n  on hills is the point of the terrain-first design (ADR-0027).\n\n## Consequences\n\n- Blast radius is small for a change of this size: `blocks`, `zoning` and `lots` are\n  untouched, so only `grading` (new) and `buildings` move in the golden hashes.\n- The renderer gains a second notion of ground. Anything that asks \"how high is the\n  terrain here\" must now say whether it means natural or as-built; `groundHeightAt`\n  is the existing answer for natural, and features carry their own heights.\n- Pads are triangulated as a centroid fan, which assumes a star-shaped lot ring. That\n  assumption is already made by `samplePolygonInteriorPoints`; if a concave lot ever\n  breaks it, the fan is where it will show.\n- The cut budget makes the gradient limit a target rather than a guarantee. Where a\n  hill is steeper than the budget can fix, the road stays steep, which is what a real\n  city does short of a switchback or a tunnel.\n",
+      "content_hash": "87e75e4c2c5297dd56ac531a8daedb76f7c52175a5760f49219f4826d435110a",
+      "ownership": "standalone",
+      "template_origin": null,
+      "source_path": null,
+      "source_refs_json": null
     }
   ],
   "edges": [
@@ -361,6 +372,15 @@
       "source_type": "path",
       "source_value": ".claude/hooks/**",
       "target_doc_id": "adr-0024",
+      "edge_type": "path_requires",
+      "priority": -1,
+      "specificity": 0
+    },
+    {
+      "edge_id": "33fbb061-742a-52d7-926b-930c5bec281b",
+      "source_type": "path",
+      "source_value": "src/components/features/city-map/viewer/**",
+      "target_doc_id": "adr-0028",
       "edge_type": "path_requires",
       "priority": -1,
       "specificity": 0
@@ -533,6 +553,15 @@
       "source_value": "refactor",
       "target_doc_id": "adr-0012",
       "edge_type": "command_requires",
+      "priority": -1,
+      "specificity": 0
+    },
+    {
+      "edge_id": "afff46c0-1d1b-5ee1-906e-7d61ebdd3652",
+      "source_type": "path",
+      "source_value": "src/lib/citygen/**",
+      "target_doc_id": "adr-0028",
+      "edge_type": "path_requires",
       "priority": -1,
       "specificity": 0
     },

@@ -92,6 +92,19 @@ const polylinePool = (
   ),
 });
 
+/**
+ * A grading layer that grades nothing, so every case here measures natural ground.
+ *
+ * The stage's other branch — a levelled lot, where the pad height stands in for the
+ * samples — is exercised by the cases that pass their own layer, and end to end by
+ * the golden seeds.
+ */
+const ungraded = (lotCount: number) => ({
+  padZ: new Float32Array(lotCount),
+  padded: new Uint8Array(lotCount),
+  roadZ: new Float32Array(0),
+});
+
 const EMPTY_ROADS: RoadGraph = {
   nodes: [],
   edges: [],
@@ -354,10 +367,19 @@ const rawLot = (id: number, blockId: number): Lot => ({
 });
 
 describe("buildingsStage", () => {
+  /**
+   * The slopes here were 0.118 and 0.122 and are now 0.058 and 0.062, which is the
+   * bug this pair used to encode. Elevation is `slope · x` and the ring spans 100 m,
+   * so its true relief is `100 · slope` and the 6 m veto turns over at 0.06. The old
+   * pair straddled 0.12 because the veto sampled `samplePolygonInteriorPoints`, whose
+   * points sit halfway from the centroid to each vertex and so span 50 m — exactly
+   * half the lot, and exactly twice the slope needed to trip it. Reading the ring's
+   * own corners is the fix; recalibrating these numbers is what proves it took.
+   */
   it.each<[DistrictKind, number, number]>([
-    ["corporate", 0.118, 0],
-    ["corporate", 0.122, 1],
-    ["slum", 0.122, 0],
+    ["corporate", 0.058, 0],
+    ["corporate", 0.062, 1],
+    ["slum", 0.062, 0],
   ])(
     "should veto district %s to a plaza only when relief exceeds the veto threshold for non-shack archetypes",
     (district, slope, expectedPlazaCount) => {
@@ -369,7 +391,13 @@ describe("buildingsStage", () => {
         polygons: buildPolygonPool([ring]),
       };
       const result = buildingsStage(
-        { context, blocks, lotLayer, roads: EMPTY_ROADS },
+        {
+          context,
+          blocks,
+          lotLayer,
+          roads: EMPTY_ROADS,
+          grading: ungraded(lotLayer.lots.length),
+        },
         constantStream(0.5)
       );
       expect(result.plazaLotIds.length).toBe(expectedPlazaCount);
@@ -385,7 +413,13 @@ describe("buildingsStage", () => {
       polygons: buildPolygonPool([ring]),
     };
     const result = buildingsStage(
-      { context, blocks, lotLayer, roads: EMPTY_ROADS },
+      {
+        context,
+        blocks,
+        lotLayer,
+        roads: EMPTY_ROADS,
+        grading: ungraded(lotLayer.lots.length),
+      },
       constantStream(0.5)
     );
     expect(result.plazaLotIds).toEqual([0]);
@@ -401,7 +435,13 @@ describe("buildingsStage", () => {
     };
     expect(() =>
       buildingsStage(
-        { context, blocks, lotLayer, roads: EMPTY_ROADS },
+        {
+          context,
+          blocks,
+          lotLayer,
+          roads: EMPTY_ROADS,
+          grading: ungraded(lotLayer.lots.length),
+        },
         constantStream(0.5)
       )
     ).toThrow("buildings: unknown block id 999");
@@ -438,7 +478,13 @@ describe("buildingsStage", () => {
       ]),
     };
     const result = buildingsStage(
-      { context, blocks, lotLayer, roads },
+      {
+        context,
+        blocks,
+        lotLayer,
+        roads,
+        grading: ungraded(lotLayer.lots.length),
+      },
       constantStream(0.5)
     );
     expect(result.buildings[0].obb.facing).toEqual({ x: -0, y: 1 });
@@ -459,7 +505,13 @@ describe("buildingsStage", () => {
       polygons: buildPolygonPool([ringA, ringB, ringC]),
     };
     const result = buildingsStage(
-      { context, blocks, lotLayer, roads: EMPTY_ROADS },
+      {
+        context,
+        blocks,
+        lotLayer,
+        roads: EMPTY_ROADS,
+        grading: ungraded(lotLayer.lots.length),
+      },
       constantStream(0.5)
     );
     expect(result.buildings.length).toBe(3);
@@ -561,7 +613,13 @@ describe("buildingsStage footprint fitting", () => {
       ]),
     };
     const result = buildingsStage(
-      { context, blocks, lotLayer, roads: throughTheMiddle },
+      {
+        context,
+        blocks,
+        lotLayer,
+        roads: throughTheMiddle,
+        grading: ungraded(lotLayer.lots.length),
+      },
       constantStream(0.5)
     );
     const named =
@@ -584,7 +642,13 @@ describe("buildingsStage footprint fitting", () => {
       polygons: buildPolygonPool([ring]),
     };
     const clear = buildingsStage(
-      { context, blocks, lotLayer, roads: EMPTY_ROADS },
+      {
+        context,
+        blocks,
+        lotLayer,
+        roads: EMPTY_ROADS,
+        grading: ungraded(lotLayer.lots.length),
+      },
       constantStream(0.5)
     );
     // An avenue along the lot's own edge, offset enough that its carriageway
@@ -600,7 +664,13 @@ describe("buildingsStage footprint fitting", () => {
       ]),
     };
     const withRoad = buildingsStage(
-      { context, blocks, lotLayer, roads: crossed },
+      {
+        context,
+        blocks,
+        lotLayer,
+        roads: crossed,
+        grading: ungraded(lotLayer.lots.length),
+      },
       constantStream(0.5)
     );
     expect(footprintArea(withRoad.buildings[0].obb)).toBeLessThan(
@@ -620,7 +690,13 @@ describe("buildingsStage footprint fitting", () => {
       polygons: buildPolygonPool([ring]),
     };
     const result = buildingsStage(
-      { context, blocks, lotLayer, roads: EMPTY_ROADS },
+      {
+        context,
+        blocks,
+        lotLayer,
+        roads: EMPTY_ROADS,
+        grading: ungraded(lotLayer.lots.length),
+      },
       constantStream(0.5)
     );
     expect(result.buildings[0].obb.facing).toEqual(frontageDir);
@@ -646,7 +722,13 @@ describe("buildingsStage clearance along the footprint's own axis", () => {
       polygons: buildPolygonPool([ring]),
     };
     const clear = buildingsStage(
-      { context, blocks, lotLayer, roads: EMPTY_ROADS },
+      {
+        context,
+        blocks,
+        lotLayer,
+        roads: EMPTY_ROADS,
+        grading: ungraded(lotLayer.lots.length),
+      },
       constantStream(0.5)
     );
     const alongTheAxis: RoadGraph = {
@@ -670,7 +752,13 @@ describe("buildingsStage clearance along the footprint's own axis", () => {
       ]),
     };
     const withRoad = buildingsStage(
-      { context, blocks, lotLayer, roads: alongTheAxis },
+      {
+        context,
+        blocks,
+        lotLayer,
+        roads: alongTheAxis,
+        grading: ungraded(lotLayer.lots.length),
+      },
       constantStream(0.5)
     );
     // Absent counts as zero: an alley down the centre line leaves no scale at
@@ -701,6 +789,7 @@ describe("buildingsStage over water", () => {
         blocks: [rawBlock(0, "suburb")],
         lotLayer,
         roads: EMPTY_ROADS,
+        grading: ungraded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );
@@ -719,6 +808,7 @@ describe("buildingsStage over water", () => {
         blocks: [rawBlock(0, "suburb")],
         lotLayer,
         roads: EMPTY_ROADS,
+        grading: ungraded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );
@@ -737,6 +827,7 @@ describe("buildingsStage over water", () => {
         blocks: [rawBlock(0, "suburb")],
         lotLayer,
         roads: EMPTY_ROADS,
+        grading: ungraded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );

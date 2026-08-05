@@ -210,6 +210,25 @@ export interface Building {
   readonly blockId: number;
 }
 
+/**
+ * The earthworks, as features rather than as a changed elevation field (ADR-0028).
+ *
+ * `padZ[i]` is the level lot `i` was cut and filled to and is meaningful only where
+ * `padded[i]` is 1; a lot too broken to level keeps natural ground and reports 0
+ * here. `roadZ` is parallel to `RoadGraph.polylines.coords` at one height per
+ * vertex — the road's longitudinal profile after its class gradient limit and the
+ * cut budget have been applied.
+ *
+ * A separate flag rather than a sentinel height: every sentinel that would fit in a
+ * Float32Array is either a real elevation somewhere on some seed, or a NaN whose bit
+ * pattern the hash would have to trust across engines.
+ */
+export interface GradingLayer {
+  readonly padZ: Float32Array;
+  readonly padded: Uint8Array;
+  readonly roadZ: Float32Array;
+}
+
 export interface InstanceBuffer {
   readonly count: number;
   /** 16 floats per instance, column-major, sorted by blockId. */
@@ -228,6 +247,7 @@ export const STAGE_NAMES = [
   "blocks",
   "zoning",
   "lots",
+  "grading",
   "buildings",
 ] as const;
 /** @public published domain vocabulary: consumers narrow on this union even where the first slice does not, and it is the name a new member is added to */
@@ -328,6 +348,8 @@ export interface CityModel {
   readonly blockPolygons: PolygonPool;
   readonly lots: readonly Lot[];
   readonly lotPolygons: PolygonPool;
+  /** The ground as built. `terrain.elevation` stays the ground as found. */
+  readonly grading: GradingLayer;
   readonly buildings: readonly Building[];
   readonly instances: Readonly<Record<BuildingArchetype, InstanceBuffer>>;
   /** Per-stage content hash; a golden failure names each divergent stage. */

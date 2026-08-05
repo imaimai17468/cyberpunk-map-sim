@@ -4,6 +4,7 @@ import type { CityModel } from "@/entities/city";
 import type { CityViewMode } from "../cityModelMachine";
 import { createBuildingInstances } from "./buildingInstances";
 import { FOG, LACQUER, SKY_HORIZON, SKY_ZENITH, linearRgb } from "./palette";
+import { createPadSurfaces } from "./padSurfaces";
 import { createRoadLines } from "./roadLines";
 import { createTerrainMesh } from "./terrainMesh";
 
@@ -102,6 +103,9 @@ export const createScene = (model: CityModel): CityScene => {
   const scene = new THREE.Scene();
 
   const terrain = createTerrainMesh(model);
+  // Between the terrain and the roads: a pad is ground, so it belongs under the
+  // carriageway that runs past it rather than over it.
+  const pads = createPadSurfaces(model);
   const roads = createRoadLines(model);
   const buildings = createBuildingInstances(model);
 
@@ -115,7 +119,7 @@ export const createScene = (model: CityModel): CityScene => {
   const root = new THREE.Group();
   root.name = "city";
   root.position.set(-half, 0, -half);
-  root.add(terrain.mesh, roads.group, buildings.group);
+  root.add(terrain.mesh, pads.group, roads.group, buildings.group);
 
   scene.add(root);
   addLighting(scene, model.params.sizeM);
@@ -126,6 +130,7 @@ export const createScene = (model: CityModel): CityScene => {
     scene.fog = mode === "3d" ? fog : null;
     scene.backgroundNode = BACKGROUNDS[mode]();
     terrain.setViewMode(mode);
+    pads.setViewMode(mode);
     buildings.setViewMode(mode);
     roads.setViewMode(mode);
   };
@@ -156,6 +161,7 @@ export const createScene = (model: CityModel): CityScene => {
     },
     dispose: () => {
       terrain.dispose();
+      pads.dispose();
       roads.dispose();
       buildings.dispose();
       scene.clear();

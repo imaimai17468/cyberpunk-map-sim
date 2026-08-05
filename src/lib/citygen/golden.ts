@@ -46,6 +46,17 @@ export interface GoldenEntry {
 }
 
 /**
+ * Regenerated 2026-08-05 a second time, for the grading stage (ADR-0028). Three
+ * values moved on each seed: the new `grading`, plus `buildings` and the whole-model
+ * hash. `arterials`, `blocks`, `zoning` and `lots` all reproduce the values below
+ * them exactly, which is the shape ADR-0028 predicted and the evidence that grading
+ * really does sit outside the decisions upstream of it — it emits levels and edits
+ * no field, so nothing before `buildings` can see it.
+ *
+ * The note that follows is the earlier regeneration that day, for the corner
+ * rounding, and its measurements about what this configuration can and cannot
+ * witness still stand.
+ *
  * Regenerated 2026-08-05 for the arterial corner rounding, all three seeds. Four
  * values moved on each — `arterials`, `blocks`, `buildings` and the whole-model hash
  * — plus `lots` on `akiba-02` alone. `zoning` moved nowhere.
@@ -83,7 +94,7 @@ export interface GoldenEntry {
  */
 export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
   "akiba-01": {
-    contentHash: "03a72c397fb21569",
+    contentHash: "734759a4c73376c2",
     stageHashes: {
       terrain: "7e22e397873605da",
       hydrology: "fcfa14d079f26450",
@@ -94,11 +105,12 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       blocks: "5e5947b40947c784",
       zoning: "d84bcb7ed308020d",
       lots: "0b05536beea52762",
-      buildings: "e0da70c9338751cb",
+      grading: "17c800f1f15cf5d4",
+      buildings: "acf5266201307eb9",
     },
   },
   "akiba-02": {
-    contentHash: "1e03520f85052fbb",
+    contentHash: "d30e851fa7c536b5",
     stageHashes: {
       terrain: "7d83a8eb1f9050c4",
       hydrology: "b201772eac6cf3ee",
@@ -109,11 +121,12 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       blocks: "37aeef94a4894276",
       zoning: "bd368aad40fa0a0d",
       lots: "4c8529337cf1f893",
-      buildings: "0cff8d22a62809c6",
+      grading: "4a09d6d27b51ff67",
+      buildings: "4238df4cf4931868",
     },
   },
   "akiba-03": {
-    contentHash: "3fe68e56106e3bce",
+    contentHash: "1456014e5f10ec78",
     stageHashes: {
       terrain: "1e715e3193652004",
       hydrology: "7eca9d76c27f920a",
@@ -124,7 +137,8 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       blocks: "8a5300bc8fdc5163",
       zoning: "307796c8ba0d53ee",
       lots: "7a60fe0e97f75341",
-      buildings: "e2c45113f54d12bb",
+      grading: "f52aca2d37d362dd",
+      buildings: "ef2cdf7981b77acf",
     },
   },
 };

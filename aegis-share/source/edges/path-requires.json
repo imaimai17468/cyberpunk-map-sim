@@ -42,6 +42,13 @@
     "specificity": 0
   },
   {
+    "edge_id": "33fbb061-742a-52d7-926b-930c5bec281b",
+    "source_value": "src/components/features/city-map/viewer/**",
+    "target_doc_id": "adr-0028",
+    "priority": -1,
+    "specificity": 0
+  },
+  {
     "edge_id": "374528df-0683-454a-9177-21555bdf8f27",
     "source_value": ".claude/skills/review-diff/**",
     "target_doc_id": "adr-0014",
@@ -143,6 +150,13 @@
     "edge_id": "a609ff28-4105-4efb-b450-bbe81be0261f",
     "source_value": ".claude/skills/review-diff/**",
     "target_doc_id": "adr-0020",
+    "priority": -1,
+    "specificity": 0
+  },
+  {
+    "edge_id": "afff46c0-1d1b-5ee1-906e-7d61ebdd3652",
+    "source_value": "src/lib/citygen/**",
+    "target_doc_id": "adr-0028",
     "priority": -1,
     "specificity": 0
   },

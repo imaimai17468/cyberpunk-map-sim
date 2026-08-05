@@ -20,6 +20,7 @@ import { packInstances } from "./stages/assemble";
 import { blocksStage } from "./stages/blocks";
 import { buildingsStage } from "./stages/buildings";
 import { derivedStage } from "./stages/derived";
+import { gradingStage } from "./stages/grading";
 import { hydrologyStage } from "./stages/hydrology";
 import { lotsStage } from "./stages/lots";
 import { social } from "./stages/social";
@@ -164,9 +165,26 @@ export const generateCity = (
     streamFor("lots")
   );
 
+  // Earthworks before anything is built on them. This produces levels, not a new
+  // elevation field (ADR-0028), so nothing upstream is invalidated and `buildings`
+  // is the only stage that has to know.
+  report("grading");
+  const grading = gradingStage({
+    grid,
+    elevation: terrain.elevation,
+    roads: blockLayer.roads,
+    lotLayer,
+  });
+
   report("buildings");
   const buildingLayer = buildingsStage(
-    { context, blocks: zonedBlocks, lotLayer, roads: blockLayer.roads },
+    {
+      context,
+      blocks: zonedBlocks,
+      lotLayer,
+      roads: blockLayer.roads,
+      grading,
+    },
     streamFor("buildings")
   );
 
@@ -236,6 +254,11 @@ export const generateCity = (
         )
       )
       .finish(),
+    grading: byteWriter()
+      .f32Array(grading.padZ)
+      .u8Array(grading.padded)
+      .f32Array(grading.roadZ)
+      .finish(),
     buildings: byteWriter()
       .u32(buildingLayer.buildings.length)
       .f32Array(instances.corpoTower.matrices)
@@ -253,6 +276,7 @@ export const generateCity = (
     blocks: hashBytes(stageBytes.blocks),
     zoning: hashBytes(stageBytes.zoning),
     lots: hashBytes(stageBytes.lots),
+    grading: hashBytes(stageBytes.grading),
     buildings: hashBytes(stageBytes.buildings),
   };
 
@@ -266,6 +290,7 @@ export const generateCity = (
     blockPolygons: blockLayer.polygons,
     lots: lotLayer.lots,
     lotPolygons: lotLayer.polygons,
+    grading,
     buildings: buildingLayer.buildings,
     instances,
     stageHashes,

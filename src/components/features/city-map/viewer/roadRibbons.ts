@@ -325,22 +325,28 @@ const facesOf = (
   return [...runs, ...joints, ...capFaces(polyline, half)];
 };
 
+interface TaggedFace {
+  readonly face: Face;
+  readonly line: number;
+}
+
 const emit = (
-  faces: readonly Face[],
-  height: (p: Vec2) => number
+  tagged: readonly TaggedFace[],
+  height: (p: Vec2, polylineIndex: number) => number
 ): RibbonMesh => {
+  const faces = tagged.map((t) => t.face);
   const vertexCount = faces.reduce((n, f) => n + f.length, 0);
   if (vertexCount === 0) return EMPTY;
   const indexCount = faces.reduce((n, f) => n + (f.length === 4 ? 6 : 3), 0);
   const positions = new Float32Array(vertexCount * 3);
   const indices = new Uint32Array(indexCount);
 
-  faces.reduce(
-    ({ v, i }, face) => {
+  tagged.reduce(
+    ({ v, i }, { face, line }) => {
       face.forEach((corner, c) => {
         const o = (v + c) * 3;
         positions[o] = corner.x;
-        positions[o + 1] = height(corner);
+        positions[o + 1] = height(corner, line);
         positions[o + 2] = corner.y;
       });
       // The winding is not obvious and was wrong first time, so it is worth
@@ -369,13 +375,18 @@ const emit = (
 export const ribbonOf = (
   polylines: readonly (readonly Vec2[])[],
   cls: RoadClass,
-  elevationAt: (p: Vec2) => number,
+  elevationAt: (p: Vec2, polylineIndex: number) => number,
   maxSpanM: number
 ): RibbonMesh => {
   const half = ROAD_WIDTH_M[cls] / 2;
   const span = maxSpanM > 0 ? maxSpanM : Number.POSITIVE_INFINITY;
-  return emit(
-    polylines.flatMap((line) => facesOf(line, half, span)),
-    elevationAt
+  // Faces are tagged with the polyline they came from so `emit` can ask the right
+  // road how high it is. A road carries its own graded profile (ADR-0028) rather
+  // than reading the ground under each corner, which is what stops it riding the
+  // bumps it was cut through — and it makes the surface level across its width,
+  // since every corner of a face asks the same centreline.
+  const tagged = polylines.flatMap((line, i) =>
+    facesOf(line, half, span).map((face) => ({ face, line: i }))
   );
+  return emit(tagged, elevationAt);
 };

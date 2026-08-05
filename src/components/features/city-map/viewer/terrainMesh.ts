@@ -143,6 +143,33 @@ const vertexColor = (
   return mix(ramp.low, ramp.high, heightFraction);
 };
 
+/**
+ * The ground's own colour at a height, for a surface that is ground but is not this
+ * mesh.
+ *
+ * A graded pad is ground, and painting it a colour of its own turned every levelled
+ * lot into a bright tile against darker terrain — the ramp is what makes relief read
+ * at all in the plan view, so a flat colour is not a neutral choice but the brightest
+ * or dullest land on the map. Exported so `padMeshes` can ask the same question the
+ * terrain answers for itself, against the same ramp and the same height scale.
+ */
+export const groundColorRamp = (
+  model: CityModel,
+  mode: CityViewMode
+): ((heightM: number) => readonly [number, number, number]) => {
+  // Hoisted deliberately. The obvious shape for this is a plain
+  // `groundColorAt(model, mode, height)`, and it cost a hung browser: the scan for
+  // the maximum runs over every cell in the field — 262,144 of them at the app's
+  // own resolution — and a caller colouring 180,000 pad vertices called it once per
+  // vertex. Handing back a closure makes the scan once per surface.
+  const maxHeight = model.terrain.elevation.data.reduce(
+    (m, v) => Math.max(m, v),
+    1
+  );
+  const ramp = mode === "2d" ? RAMPS.plan : RAMPS.night;
+  return (heightM: number) => vertexColor(ramp, 0, heightM / maxHeight);
+};
+
 export interface TerrainMeshResult {
   readonly mesh: THREE.Mesh;
   readonly setViewMode: (mode: CityViewMode) => void;

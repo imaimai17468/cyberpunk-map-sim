@@ -9,7 +9,7 @@ import { polylinePoints } from "@/lib/citygen/stages/roadGeometry";
 import type { CityViewMode } from "../cityModelMachine";
 import { PLAN_ROAD, PLAN_ROAD_BRIDGE, ROAD_BRIDGE } from "./palette";
 import { ribbonOf } from "./roadRibbons";
-import { groundHeightAt, renderCellSizeM } from "./terrainMesh";
+import { renderCellSizeM } from "./terrainMesh";
 
 /**
  * Roads as surfaces of their real width, one mesh per class.
@@ -122,7 +122,53 @@ interface Bucket {
   readonly bridge: boolean;
   /** Whole polylines, not loose segments: the turns are where the width shows. */
   readonly polylines: readonly (readonly Vec2[])[];
+  /** Each polyline's graded profile, one height per vertex (ADR-0028). */
+  readonly profiles: readonly (readonly number[])[];
 }
+
+/**
+ * The road's own level at a point, read off its graded profile.
+ *
+ * The point is projected onto the polyline and the profile interpolated along the
+ * segment it lands on, so a ribbon corner half a carriageway off the centreline
+ * still gets the centreline's height — a road is level across its width. Reading
+ * `groundHeightAt` per corner instead is what used to make the surface ride every
+ * bump the road was cut through, and it is also why the two kerbs could sit at
+ * different heights on a side slope.
+ *
+ * A linear scan over the polyline's own vertices. The arterials are the only lines
+ * long enough for that to matter and there are a few dozen of them; streets have two
+ * vertices apiece.
+ */
+const profileHeightAt = (
+  line: readonly Vec2[],
+  profile: readonly number[],
+  p: Vec2
+): number => {
+  const best = line.slice(0, -1).reduce(
+    (acc, a, i) => {
+      const b = line[i + 1];
+      const abx = b.x - a.x;
+      const aby = b.y - a.y;
+      const lenSq = abx * abx + aby * aby;
+      const t =
+        lenSq < 1e-12
+          ? 0
+          : Math.min(
+              1,
+              Math.max(0, ((p.x - a.x) * abx + (p.y - a.y) * aby) / lenSq)
+            );
+      const dx = p.x - (a.x + abx * t);
+      const dy = p.y - (a.y + aby * t);
+      const d = dx * dx + dy * dy;
+      return d < acc.d
+        ? { d, z: profile[i] + (profile[i + 1] - profile[i]) * t }
+        : acc;
+    },
+    { d: Number.POSITIVE_INFINITY, z: profile[0] }
+  );
+  return best.z;
+};
 
 /**
  * The matcher pairs this with a 13-line barycentric helper in
@@ -135,10 +181,6 @@ export const createRoadLines = (model: CityModel): RoadLinesResult => {
   const group = new THREE.Group();
   group.name = "roads";
 
-  // The ground as drawn, not as generated — see `groundHeightAt`. Asking the
-  // elevation field instead is what buried ribbon corners under the terrain.
-  const elevationAt = (p: Vec2): number =>
-    groundHeightAt(model, p) + ROAD_LIFT_M;
   const maxSpanM = renderCellSizeM(model);
 
   // Bridges get their own bucket per class so they can be coloured apart
@@ -150,6 +192,16 @@ export const createRoadLines = (model: CityModel): RoadLinesResult => {
       polylines: model.roads.edges
         .filter((e) => e.cls === cls && (e.crossing === "bridge") === bridge)
         .map((e) => polylinePoints(model.roads, e.polylineIndex)),
+      profiles: model.roads.edges
+        .filter((e) => e.cls === cls && (e.crossing === "bridge") === bridge)
+        .map((e) => {
+          const start = model.roads.polylines.starts[e.polylineIndex];
+          const end = model.roads.polylines.starts[e.polylineIndex + 1];
+          return Array.from(
+            { length: end - start },
+            (_v, i) => model.grading.roadZ[start + i]
+          );
+        }),
     }))
   );
 
@@ -158,7 +210,9 @@ export const createRoadLines = (model: CityModel): RoadLinesResult => {
     const { positions, indices } = ribbonOf(
       bucket.polylines,
       bucket.cls,
-      elevationAt,
+      (p, line) =>
+        profileHeightAt(bucket.polylines[line], bucket.profiles[line], p) +
+        ROAD_LIFT_M,
       maxSpanM
     );
     if (indices.length === 0) return [];

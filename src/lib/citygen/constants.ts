@@ -146,6 +146,37 @@ export const ARTERIALS = {
 } as const;
 
 /**
+ * Stage 10 — earthworks (ADR-0028).
+ *
+ * `maxGrade` is a rise over run per road class, and the numbers are read off
+ * 道路構造令 第20条 rather than chosen: that table caps the longitudinal gradient
+ * at 2% standard and 5% exceptional for a 120 km/h expressway, 5% and 7% for a
+ * 60 km/h urban road, 9% and 11% by the time design speed falls to 20 km/h, with
+ * roughly 12% the most it will allow anywhere. The four classes are placed on that
+ * scale by the speed each implies, and each takes the exceptional rather than the
+ * standard value — the permissive end of legal, which is the honest reading for a
+ * city that grew on this terrain.
+ *
+ * `maxCutM` and `maxFillM` are what make the gradient a target rather than a
+ * demand. Without a budget the cap is not a preference, it is a constraint that
+ * spends whatever it takes: a 200 m street climbing a hillside has to drop its
+ * upper end some 80 m to come inside 9%, and the raster version of this stage
+ * excavated exactly that before ADR-0028 replaced it. Cut is allowed twice the
+ * fill because spoil is easier to remove than to import and compact, and because
+ * a filled platform needs the retaining structure the skirt only draws.
+ */
+export const GRADING = {
+  maxGrade: {
+    highway: 0.05,
+    avenue: 0.07,
+    street: 0.09,
+    alley: 0.12,
+  },
+  maxCutM: 4,
+  maxFillM: 2,
+} as const;
+
+/**
  * Carriageway width per road class, kerb to kerb, in metres.
  *
  * Until this existed a road was a centreline with no width at all, and because

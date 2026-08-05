@@ -157,13 +157,32 @@ export const ARTERIALS = {
  * standard value — the permissive end of legal, which is the honest reading for a
  * city that grew on this terrain.
  *
- * `maxCutM` and `maxFillM` are what make the gradient a target rather than a
- * demand. Without a budget the cap is not a preference, it is a constraint that
- * spends whatever it takes: a 200 m street climbing a hillside has to drop its
- * upper end some 80 m to come inside 9%, and the raster version of this stage
- * excavated exactly that before ADR-0028 replaced it. Cut is allowed twice the
- * fill because spoil is easier to remove than to import and compact, and because
- * a filled platform needs the retaining structure the skirt only draws.
+ * `roadCutM` is what makes the gradient a target rather than a demand. Without a
+ * budget the cap is not a preference, it is a constraint that spends whatever it
+ * takes: a 200 m street climbing a hillside has to drop its upper end some 80 m to
+ * come inside 9%, and the raster version of this stage excavated exactly that before
+ * ADR-0028 replaced it. It is one number for every class because a carriageway is
+ * cut to the same standard wherever it runs; what varies by district is what gets
+ * built beside it.
+ *
+ * `budget` is that variation, in metres of cut and of fill a lot may be levelled by.
+ * One figure for the whole map was the first shape and it hollowed the city out: at
+ * 4 m of cut and 2 m of fill only a lot with 6 m of relief or less can be levelled,
+ * which fairly describes what someone building a house will pay for and badly
+ * describes a tower. Measured on `akiba-01`, 45% of dry blocks were zoned corporate
+ * and carried 82 towers between them, the rest of their lots being too steep to
+ * level and so vetoed. Half the city was zoned for towers and mostly empty.
+ *
+ * A tower is exactly the case that justifies the earthwork — it arrives with piles, a
+ * podium and retaining walls whatever the ground was doing, and its floor plate pays
+ * for the excavation — while a shack arrives with none of that and sits on the slope
+ * it found. Fill stays at half of cut throughout, because spoil is easier to remove
+ * than to import and compact, and a filled platform leans on the retaining structure
+ * that the skirt only draws.
+ *
+ * This is also the whole of the buildability test. `buildings.ts` vetoes a lot
+ * exactly when the budget could not level it, rather than comparing relief against a
+ * second constant that would be free to drift from these.
  */
 export const GRADING = {
   maxGrade: {
@@ -172,8 +191,15 @@ export const GRADING = {
     street: 0.09,
     alley: 0.12,
   },
-  maxCutM: 4,
-  maxFillM: 2,
+  roadCutM: 4,
+  budget: {
+    corporate: { maxCutM: 12, maxFillM: 6 },
+    megablock: { maxCutM: 14, maxFillM: 7 },
+    casino: { maxCutM: 10, maxFillM: 5 },
+    luxury: { maxCutM: 6, maxFillM: 3 },
+    suburb: { maxCutM: 4, maxFillM: 2 },
+    slum: { maxCutM: 1, maxFillM: 0.5 },
+  },
 } as const;
 
 /**
@@ -326,8 +352,6 @@ export const LOTS = {
 
 /** Stage 10 — buildings. */
 export const BUILDINGS = {
-  /** Relief under the footprint, in metres, above which most archetypes are vetoed. */
-  reliefVetoM: 6,
   /** Shacks terrace instead of being vetoed; this is their step height. */
   shackTerraceStepM: 2.8,
   /** A tower may not exceed this multiple of its smallest plan dimension. */

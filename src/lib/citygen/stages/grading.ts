@@ -1,4 +1,5 @@
 import type {
+  DistrictKind,
   Field2D,
   GradingLayer,
   PolygonPool,
@@ -37,6 +38,8 @@ export interface GradingInput {
   readonly elevation: Field2D;
   readonly roads: RoadGraph;
   readonly lotLayer: LotLayer;
+  /** District per block id — what decides the earthwork each lot is worth. */
+  readonly districtOf: ReadonlyMap<number, DistrictKind>;
 }
 
 const sampleAt = (field: Field2D, grid: Grid, p: Vec2): number =>
@@ -72,9 +75,14 @@ const ringOf = (pool: PolygonPool, index: number): readonly Vec2[] => {
  * So the balanced level is the preference and the interval is the constraint: take
  * the mean, then slide it to the nearest end of the interval if it falls outside.
  *
- * That the interval is `maxCutM + maxFillM` wide is also why `BUILDINGS.reliefVetoM`
- * is 6: it is these two budgets added up. The lot that gets no pad is exactly the
- * lot the veto then rejects, and neither constant has to know the other.
+ * The interval is `maxCutM + maxFillM` wide, so a lot is levellable exactly when its
+ * relief fits inside its district's budget — and that single fact is the whole
+ * buildability test downstream. `buildings.ts` vetoes on `padded` rather than on a
+ * relief threshold of its own, so there is no second constant to drift.
+ *
+ * The budget is the district's because a tower and a shack do not command the same
+ * earthwork. `GRADING.budget` carries the reasoning and the measurement that forced
+ * it.
  */
 const padLevel = (
   corners: readonly number[],
@@ -130,7 +138,7 @@ const roadProfile = (
     natural,
     spacing,
     maxGrade,
-    natural.map((z) => z - GRADING.maxCutM)
+    natural.map((z) => z - GRADING.roadCutM)
   );
 };
 
@@ -146,10 +154,13 @@ export const gradingStage = (input: GradingInput): GradingLayer => {
   const levels = lotLayer.lots.map((lot) => {
     const ring = ringOf(lotLayer.polygons, lot.ringIndex);
     if (ring.length < 3) return null;
+    const district = input.districtOf.get(lot.blockId);
+    if (district === undefined) return null;
+    const budget = GRADING.budget[district];
     return padLevel(
       ring.map((p) => sampleAt(elevation, grid, p)),
-      GRADING.maxCutM,
-      GRADING.maxFillM
+      budget.maxCutM,
+      budget.maxFillM
     );
   });
 

@@ -735,7 +735,12 @@ export const buildingsStage = (
     const minElevation = elevations.reduce((a, b) => Math.min(a, b));
     const maxElevation = elevations.reduce((a, b) => Math.max(a, b));
     const relief = maxElevation - minElevation;
-    if (relief > BUILDINGS.reliefVetoM && archetype !== "slumShack") {
+    // Buildable means levellable. Stage 10 offers a pad exactly when the district's
+    // earthwork budget could take this lot's relief, so asking whether it did is the
+    // same question this used to ask of a relief threshold of its own — with the
+    // budget, and not a second constant free to drift from it, deciding. A shack is
+    // exempt as it always was: it is the one thing built on the slope as found.
+    if (!padded && archetype !== "slumShack") {
       return { kind: "plaza", lotId: lot.id };
     }
     const center = centroid(ring);

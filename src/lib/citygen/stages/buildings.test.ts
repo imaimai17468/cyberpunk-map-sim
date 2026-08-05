@@ -93,12 +93,21 @@ const polylinePool = (
 });
 
 /**
- * A grading layer that grades nothing, so every case here measures natural ground.
+ * A grading layer that levelled every lot, which is what most cases here want.
  *
- * The stage's other branch — a levelled lot, where the pad height stands in for the
- * samples — is exercised by the cases that pass their own layer, and end to end by
- * the golden seeds.
+ * Buildability is levellability now: stage 10 offers a pad exactly when the
+ * district's earthwork budget covers the lot, and `buildingsStage` vetoes anything
+ * it did not. A case about massing or footprints therefore has to say the lot was
+ * levelled, or it is testing the veto by accident. `ungraded` below is for the cases
+ * that mean to test it.
  */
+const graded = (lotCount: number) => ({
+  padZ: new Float32Array(lotCount),
+  padded: new Uint8Array(lotCount).fill(1),
+  roadZ: new Float32Array(0),
+});
+
+/** A grading layer that levelled nothing: the veto's own fixture. */
 const ungraded = (lotCount: number) => ({
   padZ: new Float32Array(lotCount),
   padded: new Uint8Array(lotCount),
@@ -368,23 +377,29 @@ const rawLot = (id: number, blockId: number): Lot => ({
 
 describe("buildingsStage", () => {
   /**
-   * The slopes here were 0.118 and 0.122 and are now 0.058 and 0.062, which is the
-   * bug this pair used to encode. Elevation is `slope · x` and the ring spans 100 m,
-   * so its true relief is `100 · slope` and the 6 m veto turns over at 0.06. The old
-   * pair straddled 0.12 because the veto sampled `samplePolygonInteriorPoints`, whose
-   * points sit halfway from the centroid to each vertex and so span 50 m — exactly
-   * half the lot, and exactly twice the slope needed to trip it. Reading the ring's
-   * own corners is the fix; recalibrating these numbers is what proves it took.
+   * The veto now asks whether stage 10 levelled the lot, not how rough it is.
+   *
+   * That is the same question it always meant to ask — a lot too broken to grade is
+   * a lot nobody builds on — but it is now asked of the one place that decides it,
+   * `GRADING.budget`, instead of a `reliefVetoM` free to disagree with the budget.
+   * The pair of slopes this case used to straddle is gone with it; the relief that
+   * matters is the relief `grading.ts` already weighed, and its own tests cover
+   * where the budget turns over.
+   *
+   * A shack is the exemption, as it always was: it is the one thing this city builds
+   * on the slope as found.
    */
-  it.each<[DistrictKind, number, number]>([
-    ["corporate", 0.058, 0],
-    ["corporate", 0.062, 1],
-    ["slum", 0.062, 0],
+  it.each<[DistrictKind, boolean, number]>([
+    ["corporate", true, 0],
+    ["corporate", false, 1],
+    ["slum", false, 0],
   ])(
-    "should veto district %s to a plaza only when relief exceeds the veto threshold for non-shack archetypes",
-    (district, slope, expectedPlazaCount) => {
+    "should veto district %s to a plaza when the lot was levelled=%s, except for shacks",
+    (district, levelled, expectedPlazaCount) => {
       const ring = rectRing(0, 0, 100, 100);
-      const context = buildContext({ elevationSlope: slope });
+      // Flat: the veto reads `padded` and nothing else now, so a slope here would
+      // decide nothing. The relief that matters is the one `grading.ts` weighed.
+      const context = buildContext();
       const blocks = [rawBlock(0, district)];
       const lotLayer = {
         lots: [rawLot(0, 0)],
@@ -396,7 +411,7 @@ describe("buildingsStage", () => {
           blocks,
           lotLayer,
           roads: EMPTY_ROADS,
-          grading: ungraded(lotLayer.lots.length),
+          grading: levelled ? graded(1) : ungraded(1),
         },
         constantStream(0.5)
       );
@@ -418,7 +433,7 @@ describe("buildingsStage", () => {
         blocks,
         lotLayer,
         roads: EMPTY_ROADS,
-        grading: ungraded(lotLayer.lots.length),
+        grading: graded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );
@@ -440,7 +455,7 @@ describe("buildingsStage", () => {
           blocks,
           lotLayer,
           roads: EMPTY_ROADS,
-          grading: ungraded(lotLayer.lots.length),
+          grading: graded(lotLayer.lots.length),
         },
         constantStream(0.5)
       )
@@ -483,7 +498,7 @@ describe("buildingsStage", () => {
         blocks,
         lotLayer,
         roads,
-        grading: ungraded(lotLayer.lots.length),
+        grading: graded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );
@@ -510,7 +525,7 @@ describe("buildingsStage", () => {
         blocks,
         lotLayer,
         roads: EMPTY_ROADS,
-        grading: ungraded(lotLayer.lots.length),
+        grading: graded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );
@@ -618,7 +633,7 @@ describe("buildingsStage footprint fitting", () => {
         blocks,
         lotLayer,
         roads: throughTheMiddle,
-        grading: ungraded(lotLayer.lots.length),
+        grading: graded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );
@@ -647,7 +662,7 @@ describe("buildingsStage footprint fitting", () => {
         blocks,
         lotLayer,
         roads: EMPTY_ROADS,
-        grading: ungraded(lotLayer.lots.length),
+        grading: graded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );
@@ -669,7 +684,7 @@ describe("buildingsStage footprint fitting", () => {
         blocks,
         lotLayer,
         roads: crossed,
-        grading: ungraded(lotLayer.lots.length),
+        grading: graded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );
@@ -695,7 +710,7 @@ describe("buildingsStage footprint fitting", () => {
         blocks,
         lotLayer,
         roads: EMPTY_ROADS,
-        grading: ungraded(lotLayer.lots.length),
+        grading: graded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );
@@ -727,7 +742,7 @@ describe("buildingsStage clearance along the footprint's own axis", () => {
         blocks,
         lotLayer,
         roads: EMPTY_ROADS,
-        grading: ungraded(lotLayer.lots.length),
+        grading: graded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );
@@ -757,7 +772,7 @@ describe("buildingsStage clearance along the footprint's own axis", () => {
         blocks,
         lotLayer,
         roads: alongTheAxis,
-        grading: ungraded(lotLayer.lots.length),
+        grading: graded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );
@@ -789,7 +804,7 @@ describe("buildingsStage over water", () => {
         blocks: [rawBlock(0, "suburb")],
         lotLayer,
         roads: EMPTY_ROADS,
-        grading: ungraded(lotLayer.lots.length),
+        grading: graded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );
@@ -808,7 +823,7 @@ describe("buildingsStage over water", () => {
         blocks: [rawBlock(0, "suburb")],
         lotLayer,
         roads: EMPTY_ROADS,
-        grading: ungraded(lotLayer.lots.length),
+        grading: graded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );
@@ -827,7 +842,7 @@ describe("buildingsStage over water", () => {
         blocks: [rawBlock(0, "suburb")],
         lotLayer,
         roads: EMPTY_ROADS,
-        grading: ungraded(lotLayer.lots.length),
+        grading: graded(lotLayer.lots.length),
       },
       constantStream(0.5)
     );

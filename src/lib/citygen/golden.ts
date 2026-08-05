@@ -46,6 +46,10 @@ export interface GoldenEntry {
 }
 
 /**
+ * Regenerated 2026-08-05 a third time, for the per-district earthwork budget. Only
+ * `grading` and `buildings` move again, for the same reason as the second: the
+ * budget decides which lots get a pad, and nothing upstream of `buildings` reads one.
+ *
  * Regenerated 2026-08-05 a second time, for the grading stage (ADR-0028). Three
  * values moved on each seed: the new `grading`, plus `buildings` and the whole-model
  * hash. `arterials`, `blocks`, `zoning` and `lots` all reproduce the values below
@@ -94,7 +98,7 @@ export interface GoldenEntry {
  */
 export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
   "akiba-01": {
-    contentHash: "734759a4c73376c2",
+    contentHash: "1f1c79f8d3d70deb",
     stageHashes: {
       terrain: "7e22e397873605da",
       hydrology: "fcfa14d079f26450",
@@ -105,12 +109,12 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       blocks: "5e5947b40947c784",
       zoning: "d84bcb7ed308020d",
       lots: "0b05536beea52762",
-      grading: "17c800f1f15cf5d4",
-      buildings: "acf5266201307eb9",
+      grading: "757245e637243b62",
+      buildings: "5fd1d7d7cfa63fde",
     },
   },
   "akiba-02": {
-    contentHash: "d30e851fa7c536b5",
+    contentHash: "99a72bbc6f853f0b",
     stageHashes: {
       terrain: "7d83a8eb1f9050c4",
       hydrology: "b201772eac6cf3ee",
@@ -121,12 +125,12 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       blocks: "37aeef94a4894276",
       zoning: "bd368aad40fa0a0d",
       lots: "4c8529337cf1f893",
-      grading: "4a09d6d27b51ff67",
-      buildings: "4238df4cf4931868",
+      grading: "eaf62a6846358f71",
+      buildings: "15b7508b9605d764",
     },
   },
   "akiba-03": {
-    contentHash: "1456014e5f10ec78",
+    contentHash: "bec859623c066658",
     stageHashes: {
       terrain: "1e715e3193652004",
       hydrology: "7eca9d76c27f920a",
@@ -137,8 +141,8 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       blocks: "8a5300bc8fdc5163",
       zoning: "307796c8ba0d53ee",
       lots: "7a60fe0e97f75341",
-      grading: "f52aca2d37d362dd",
-      buildings: "ef2cdf7981b77acf",
+      grading: "918f3f9165fc83cb",
+      buildings: "75c805bddaf9b6b9",
     },
   },
 };

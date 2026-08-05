@@ -174,6 +174,7 @@ export const generateCity = (
     elevation: terrain.elevation,
     roads: blockLayer.roads,
     lotLayer,
+    districtOf: new Map(zonedBlocks.map((b) => [b.id, b.district])),
   });
 
   report("buildings");

@@ -90,12 +90,18 @@ const emptyBuffer = (): InstanceBuffer => ({
 });
 
 /**
- * Contiguous instance ranges per block, recorded while packing. Unused by the
- * first slice; it is the hook LOD and streaming will need, and computing it
- * here is free because the instances are already block-sorted.
+ * Contiguous instance ranges per block, recorded while packing. It is the hook
+ * LOD and streaming will need, and computing it here is free because the
+ * instances are already block-sorted.
+ *
+ * Exported because the viewer's kit expander (ADR-0029) packs its own per-part
+ * buffers in this same block-then-id order and has to mean the same thing by a
+ * range. Two copies of this would be two definitions of what a block's
+ * instances are, and LOD's whole trick is that the box range and the kit ranges
+ * describe the same set.
  */
-const blockRangesOf = (
-  instances: readonly PackedInstance[]
+export const blockRangesOf = (
+  instances: readonly { readonly blockId: number }[]
 ): ReadonlyMap<number, readonly [number, number]> => {
   const ranges = new Map<number, [number, number]>();
   instances.forEach((instance, index) => {

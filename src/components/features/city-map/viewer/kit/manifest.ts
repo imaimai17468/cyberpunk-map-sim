@@ -9,8 +9,32 @@ import corpoTowerUrl from "./assets/corpoTower.glb";
  * component affinity — it exists to feed this viewer's instanced meshes.
  */
 
-/** @public the const array is the single source of the union below; a new part is added here and every `Record` over it fails to compile until handled */
-export const KIT_PARTS = ["base", "floor", "crown"] as const;
+/**
+ * The parts a tower is stacked from, bottom to top in the order they usually
+ * appear.
+ *
+ * Seven rather than three because three gave 398 towers one silhouette. These
+ * are the pieces a stacking grammar can vary: how many sections, how hard each
+ * steps in, how often the plant floor breaks the glass, whether the sky lobby
+ * and the mast are there at all. `expandKit.ts` owns that grammar.
+ *
+ * `setback` is the lower section's roof terrace, not a taper — a wedge would
+ * bake the shrink factor into the mesh, and then the grammar could not choose
+ * it. The section above simply starts narrower, which is what a stepped tower
+ * does.
+ *
+ * @public the const array is the single source of the union below; a new part is
+ * added here and every `Record` over it fails to compile until handled
+ */
+export const KIT_PARTS = [
+  "podium",
+  "floor",
+  "mech",
+  "belt",
+  "setback",
+  "crown",
+  "mast",
+] as const;
 export type KitPart = (typeof KIT_PARTS)[number];
 
 /**

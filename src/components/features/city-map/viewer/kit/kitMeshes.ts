@@ -51,32 +51,54 @@ const measure = (meshes: Readonly<Record<KitPart, THREE.Mesh>>): KitMetrics => {
   };
   return {
     partHeights: {
-      base: heightOf("base"),
+      podium: heightOf("podium"),
       floor: heightOf("floor"),
+      mech: heightOf("mech"),
+      belt: heightOf("belt"),
+      setback: heightOf("setback"),
       crown: heightOf("crown"),
+      mast: heightOf("mast"),
     },
     footprint: { x: spanOf("x"), z: spanOf("z") },
   };
 };
 
-/** The kit's three meshes, or null when the asset does not carry all of them. */
+/**
+ * The kit's meshes by part, or null when the asset does not carry all of them.
+ *
+ * All or nothing: a kit missing a part would stack a hole, and the boxes the
+ * caller is already drawing are a better answer than that. Read out one name at
+ * a time rather than folded from `KIT_PARTS`, so adding a part is a compile
+ * error here instead of a lookup that silently returns undefined.
+ */
 const meshesFrom = (
   root: THREE.Object3D
 ): Readonly<Record<KitPart, THREE.Mesh>> | null => {
-  const found = KIT_PARTS.map((part) => {
-    const object = root.getObjectByName(part);
-    return object instanceof THREE.Mesh ? { part, mesh: object } : null;
-  });
-  const present = found.filter((entry) => entry !== null);
-  if (present.length !== KIT_PARTS.length) return null;
-  const byPart = new Map(present.map((entry) => [entry.part, entry.mesh]));
-  const base = byPart.get("base");
+  const byPart = new Map(
+    KIT_PARTS.map((part) => {
+      const object = root.getObjectByName(part);
+      return [part, object instanceof THREE.Mesh ? object : null] as const;
+    })
+  );
+  const podium = byPart.get("podium");
   const floor = byPart.get("floor");
+  const mech = byPart.get("mech");
+  const belt = byPart.get("belt");
+  const setback = byPart.get("setback");
   const crown = byPart.get("crown");
-  if (base === undefined || floor === undefined || crown === undefined) {
+  const mast = byPart.get("mast");
+  if (
+    podium == null ||
+    floor == null ||
+    mech == null ||
+    belt == null ||
+    setback == null ||
+    crown == null ||
+    mast == null
+  ) {
     return null;
   }
-  return { base, floor, crown };
+  return { podium, floor, mech, belt, setback, crown, mast };
 };
 
 /**

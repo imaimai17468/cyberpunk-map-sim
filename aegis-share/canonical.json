@@ -1,7 +1,7 @@
 {
   "format_version": 1,
-  "snapshot_id": "f8048223d1321744d60ea9f8f48c6edc648c8f5feaf570642d1b2fd265c449c4",
-  "knowledge_version": 148,
+  "snapshot_id": "38a8d7a001020723e5ff1089ccf030af330c05c08ce20108fcf9fc919841b114",
+  "knowledge_version": 150,
   "documents": [
     {
       "doc_id": "adr-0001",
@@ -310,6 +310,17 @@
       "template_origin": null,
       "source_path": null,
       "source_refs_json": null
+    },
+    {
+      "doc_id": "adr-0029",
+      "title": "Building Kit Expansion Is Drawing, Not Model",
+      "kind": "reference",
+      "content": "# 0029. A building's kit of parts is drawn from the model, not stored in it\n\n- Status: accepted\n- Date: 2026-08-06\n\n## Context\n\nEvery building is drawn as one unit box scaled to its OBB and its height. That\nholds while buildings are boxes and stops holding the moment they are authored\nmeshes, because the instance matrix scales width, height and depth independently.\n\nMeasured on akiba-01 at 2048 m and 512 cells, `heightM / min(w, d)` at p50/p90:\nslumShack 0.99/1.71, detachedHouse 0.77/1.25, luxuryResidence 0.99/1.48, casino\n2.53/5.77, corpoTower 7.82/22.62, megabuilding 45.20. Footprint aspect, long side\nover short, stays inside 1.06–2.58 across p10–p90 for every archetype. So the\nhorizontal stretch is mild everywhere and one authored mesh survives it, while the\nvertical stretch destroys any repeated detail — and only on the towers. That is\nwhat makes a kit of parts the answer for those rather than a single mesh, and it\nis why `corpoTower` is the archetype the kit is proved on first.\n\nWhere the expansion of one building into its parts lives is the decision. The\ntempting home is `assemble.ts`, whose own comment says the renderer is a dumb\nconsumer that uploads a buffer, and which already turns one megabuilding into a\nvariable number of stacked tier instances — 2 to 4, from `BUILDINGS.megabuilding`'s\n`minTiers` and `maxExtraTiers`.\n\n## Decision\n\nKit expansion is **renderer-side**, under\n`src/components/features/city-map/viewer/kit/`: a manifest naming the parts and\ntheir assets, a pure expander from `Building[]` plus part metrics to per-part\ninstance buffers, and an uploader that owns the THREE objects. `assemble.ts`,\n`CityModel`, `entities/city`'s vocabulary and every golden hash are untouched.\n\nADR-0028 rejected viewer-only grading because `baseZM` is a model value: the\n`buildings` stage reads it, so two authorities over one quantity would drift apart.\nA part breakdown has no second consumer — no stage reads it, and the same\n`CityModel` drawn with a kit or with a box is the same city by the definition the\nproduct uses, `contentHash`. The line already drawn here is massing against dress.\nMegabuilding tiers are model values because they change the volume the city\noccupies; kit parts tile a volume already decided. The storey is likewise already\na drawing unit rather than a city one — `FLOOR_PITCH_M = 3.6` lives in the\nviewer's `windowMaterial.ts` — and a floor module is that constant in mesh space.\n\nHeight keeps one authority. The expander takes\n`floors = max(1, round((heightM - baseH - crownH) / floorH))` and then scales the\nfloor stack so the assembly ends at exactly `heightM`. Part metrics are measured\noff the loaded meshes rather than written into the manifest, so they cannot drift\nfrom what Blender exported.\n\n## Alternatives considered\n\n- **Expand in `assemble.ts`.** Rejected on a cost that recurs rather than on\n  purity: the engine would take part heights as input, so `generateCity` becomes a\n  function of asset files, and re-authoring a crown in Blender moves the\n  `buildings` hash and `contentHash` on every seed. `golden.ts` says a diff there\n  means the generator's output changed, \"which is either the point of your change\n  or a bug\" — an art iteration is neither. `entities/city` already keeps\n  `discards` outside `contentHash` on the same reasoning: what the engine reports\n  is not what the city is.\n- **A `src/lib/citykit/` layer.** Rejected: the expander exists to feed this\n  viewer's instanced meshes and is parameterised by this kit's assets, so it fails\n  the test ADR-0027 used to admit the engine into `src/lib/**` — a web of pure\n  functions with zero component affinity that could ship as a library. Its\n  substance survives as module structure inside `viewer/kit/`.\n- **One stretched mesh per archetype.** Rejected for the towers by the p90 above.\n  Kept for the other five, which makes it half of the answer rather than a\n  discarded alternative.\n\n## Consequences\n\n- `assemble.ts` is not dead code. Its box instances stay the 2D plan view — a plan\n  states category, not dress — the far LOD, and every archetype without a kit.\n- `InstanceBuffer.blockRanges` gains the purpose it was reserved for. The expander\n  consumes buildings in the same blockId-then-id order `assemble.ts` packs them\n  in, so per-part buffers are block-contiguous too and LOD can swap a block's kit\n  ranges for its box range.\n- Two comments assert a boundary the code will no longer keep: `assemble.ts`'s\n  \"the renderer is a dumb consumer that uploads a buffer\" and\n  `buildingInstances.ts`'s restatement of it. Both narrow when the kit lands — the\n  worker owns massing, the kit dresses it.\n- Kit assembly waits on asset load and runs on the main thread, unlike the\n  worker-side packing it sits beside.\n- `.glb` needs `assetsInclude` or a `?url` import: it is absent from Vite 8.1.4's\n  `KNOWN_ASSET_TYPES`.\n- The reversal is named rather than left open. If a stage ever consumes a floor\n  count, `floors` becomes a field on `Building`, additively, and the kit honours it\n  instead of deriving it. That is the moment this decision turns over, and nothing\n  short of it is.\n",
+      "content_hash": "246c266e3f1ed1882ad773c3d75b74ca795391fe9a12b888b2d1cc5442f219e9",
+      "ownership": "standalone",
+      "template_origin": null,
+      "source_path": null,
+      "source_refs_json": null
     }
   ],
   "edges": [
@@ -368,6 +379,15 @@
       "specificity": 0
     },
     {
+      "edge_id": "21d8fe70-b39f-453f-afe0-f9954926a954",
+      "source_type": "path",
+      "source_value": "src/components/features/city-map/viewer/**",
+      "target_doc_id": "adr-0029",
+      "edge_type": "path_requires",
+      "priority": -1,
+      "specificity": 0
+    },
+    {
       "edge_id": "2f5e9f7e-7dbf-4a74-8ccb-09680406df80",
       "source_type": "path",
       "source_value": ".claude/hooks/**",
@@ -408,6 +428,15 @@
       "source_type": "path",
       "source_value": "scripts/evals/**",
       "target_doc_id": "adr-0014",
+      "edge_type": "path_requires",
+      "priority": -1,
+      "specificity": 0
+    },
+    {
+      "edge_id": "49c62528-174e-43cc-8f36-13ba7ecc0ef1",
+      "source_type": "path",
+      "source_value": "src/lib/citygen/stages/assemble.ts",
+      "target_doc_id": "adr-0029",
       "edge_type": "path_requires",
       "priority": -1,
       "specificity": 0

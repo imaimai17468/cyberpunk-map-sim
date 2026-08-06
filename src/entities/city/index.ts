@@ -155,8 +155,25 @@ export interface Block {
   readonly scoreMargin: number;
 }
 
-/** @public the const array is the single source of the union below; exported so a new member can be enumerated and every `Record` over it fails to compile until handled (ADR-0027 additive extension) */
-export const FRONTAGES = ["street", "landlocked", "landlocked-merged"] as const;
+/**
+ * What a lot has to reach the road network by, in descending order of access.
+ *
+ * `alley` is the slum graft the design doc calls for: a lot with no street
+ * boundary is not necessarily cut off, because the lot subdivision's own cuts
+ * form a network that reaches the block's edge. `landlocked` is what is left
+ * when even that cannot be built — a block bounded by nothing but water and the
+ * map border has no road to connect an alley to.
+ *
+ * @public the const array is the single source of the union below; exported so
+ * a new member can be enumerated and every `Record` over it fails to compile
+ * until handled (ADR-0027 additive extension)
+ */
+export const FRONTAGES = [
+  "street",
+  "alley",
+  "landlocked",
+  "landlocked-merged",
+] as const;
 export type Frontage = (typeof FRONTAGES)[number];
 
 export interface Lot {
@@ -165,7 +182,11 @@ export interface Lot {
   readonly ringIndex: number;
   readonly frontage: Frontage;
   /**
-   * Unit direction of the street this lot fronts, or null when it fronts none.
+   * Unit direction of the road this lot fronts, or null when it fronts none.
+   *
+   * The road is whichever one `frontage` names — the bounding street for
+   * `street`, the subdivision cut for `alley` — so the two fields can never
+   * disagree about which road the building is squared up to.
    *
    * Carried on the lot rather than recomputed downstream because it is the
    * subdivision that knows which of the block's boundary edges were roads; by

@@ -17,7 +17,12 @@ import { describe, expect, it } from "vitest";
 import { BUILDINGS } from "../constants";
 import { createField2D } from "../field/field2d";
 import type { RngStream } from "../rng/types";
-import type { AnchorSet, DerivedFields, PipelineContext } from "./types";
+import type {
+  AnchorSet,
+  DerivedFields,
+  LotLayer,
+  PipelineContext,
+} from "./types";
 import {
   applySlenderness,
   buildingsStage,
@@ -119,6 +124,17 @@ const EMPTY_ROADS: RoadGraph = {
   edges: [],
   polylines: { coords: new Float32Array(0), starts: Uint32Array.from([0]) },
 };
+
+/**
+ * This stage takes the road graph as its own declared input, so the copy
+ * `LotLayer` carries is unread here — the field is filled to satisfy the
+ * contract rather than to be measured against, and `roads:` in each case below
+ * is the one that decides anything.
+ */
+const lotLayerOf = (
+  lots: LotLayer["lots"],
+  polygons: PolygonPool
+): LotLayer => ({ lots, polygons, roads: EMPTY_ROADS });
 
 const stripRoadEdge = (id: number, polylineIndex: number): RoadEdge => ({
   id,
@@ -401,10 +417,7 @@ describe("buildingsStage", () => {
       // decide nothing. The relief that matters is the one `grading.ts` weighed.
       const context = buildContext();
       const blocks = [rawBlock(0, district)];
-      const lotLayer = {
-        lots: [rawLot(0, 0)],
-        polygons: buildPolygonPool([ring]),
-      };
+      const lotLayer = lotLayerOf([rawLot(0, 0)], buildPolygonPool([ring]));
       const result = buildingsStage(
         {
           context,
@@ -423,10 +436,7 @@ describe("buildingsStage", () => {
     const ring = rectRing(0, 0, 1, 1);
     const context = buildContext();
     const blocks = [rawBlock(0, "corporate")];
-    const lotLayer = {
-      lots: [rawLot(0, 0)],
-      polygons: buildPolygonPool([ring]),
-    };
+    const lotLayer = lotLayerOf([rawLot(0, 0)], buildPolygonPool([ring]));
     const result = buildingsStage(
       {
         context,
@@ -444,10 +454,7 @@ describe("buildingsStage", () => {
     const ring = rectRing(0, 0, 100, 100);
     const context = buildContext();
     const blocks: readonly Block[] = [];
-    const lotLayer = {
-      lots: [rawLot(0, 999)],
-      polygons: buildPolygonPool([ring]),
-    };
+    const lotLayer = lotLayerOf([rawLot(0, 999)], buildPolygonPool([ring]));
     expect(() =>
       buildingsStage(
         {
@@ -473,10 +480,7 @@ describe("buildingsStage", () => {
     const ring = rectRing(0, 0, 100, 20);
     const context = buildContext();
     const blocks = [rawBlock(0, "casino")];
-    const lotLayer = {
-      lots: [rawLot(0, 0)],
-      polygons: buildPolygonPool([ring]),
-    };
+    const lotLayer = lotLayerOf([rawLot(0, 0)], buildPolygonPool([ring]));
     const roads: RoadGraph = {
       nodes: [],
       edges: [stripRoadEdge(0, 0), stripRoadEdge(1, 1), stripRoadEdge(2, 2)],
@@ -515,10 +519,10 @@ describe("buildingsStage", () => {
       rawBlock(1, "luxury"),
       rawBlock(2, "suburb"),
     ];
-    const lotLayer = {
-      lots: [rawLot(0, 0), rawLot(1, 1), rawLot(2, 2)],
-      polygons: buildPolygonPool([ringA, ringB, ringC]),
-    };
+    const lotLayer = lotLayerOf(
+      [rawLot(0, 0), rawLot(1, 1), rawLot(2, 2)],
+      buildPolygonPool([ringA, ringB, ringC])
+    );
     const result = buildingsStage(
       {
         context,
@@ -601,10 +605,7 @@ describe("buildingsStage footprint fitting", () => {
     const ring = rectRing(0, 0, 100, 100);
     const context = buildContext();
     const blocks = [rawBlock(0, "suburb")];
-    const lotLayer = {
-      lots: [rawLot(0, 0)],
-      polygons: buildPolygonPool([ring]),
-    };
+    const lotLayer = lotLayerOf([rawLot(0, 0)], buildPolygonPool([ring]));
     // A highway: 30 m of carriageway, so its 15 m half-width swallows the
     // footprint's centre wherever the massing puts it along the lot.
     const throughTheMiddle: RoadGraph = {
@@ -652,10 +653,7 @@ describe("buildingsStage footprint fitting", () => {
     const ring = rectRing(0, 0, 100, 100);
     const context = buildContext();
     const blocks = [rawBlock(0, "suburb")];
-    const lotLayer = {
-      lots: [rawLot(0, 0)],
-      polygons: buildPolygonPool([ring]),
-    };
+    const lotLayer = lotLayerOf([rawLot(0, 0)], buildPolygonPool([ring]));
     const clear = buildingsStage(
       {
         context,
@@ -700,10 +698,10 @@ describe("buildingsStage footprint fitting", () => {
     // The ring's own long axis is +x; the frontage points the other way, so a
     // result matching it can only have come from `frontageDir`.
     const frontageDir = { x: 0, y: 1 };
-    const lotLayer = {
-      lots: [{ ...rawLot(0, 0), frontageDir }],
-      polygons: buildPolygonPool([ring]),
-    };
+    const lotLayer = lotLayerOf(
+      [{ ...rawLot(0, 0), frontageDir }],
+      buildPolygonPool([ring])
+    );
     const result = buildingsStage(
       {
         context,
@@ -732,10 +730,7 @@ describe("buildingsStage clearance along the footprint's own axis", () => {
     const ring = rectRing(0, 0, 100, 100);
     const context = buildContext();
     const blocks = [rawBlock(0, "suburb")];
-    const lotLayer = {
-      lots: [rawLot(0, 0)],
-      polygons: buildPolygonPool([ring]),
-    };
+    const lotLayer = lotLayerOf([rawLot(0, 0)], buildPolygonPool([ring]));
     const clear = buildingsStage(
       {
         context,
@@ -794,10 +789,7 @@ describe("buildingsStage clearance along the footprint's own axis", () => {
 describe("buildingsStage over water", () => {
   it("should build nothing when the lot is submerged", () => {
     const ring = rectRing(0, 0, 100, 100);
-    const lotLayer = {
-      lots: [rawLot(0, 0)],
-      polygons: buildPolygonPool([ring]),
-    };
+    const lotLayer = lotLayerOf([rawLot(0, 0)], buildPolygonPool([ring]));
     const result = buildingsStage(
       {
         context: buildContext({ allWater: true }),
@@ -813,10 +805,7 @@ describe("buildingsStage over water", () => {
 
   it("should name the lot as a plaza when it is submerged", () => {
     const ring = rectRing(0, 0, 100, 100);
-    const lotLayer = {
-      lots: [rawLot(0, 0)],
-      polygons: buildPolygonPool([ring]),
-    };
+    const lotLayer = lotLayerOf([rawLot(0, 0)], buildPolygonPool([ring]));
     const result = buildingsStage(
       {
         context: buildContext({ allWater: true }),
@@ -832,10 +821,7 @@ describe("buildingsStage over water", () => {
 
   it("should still build when the lot is entirely dry", () => {
     const ring = rectRing(0, 0, 100, 100);
-    const lotLayer = {
-      lots: [rawLot(0, 0)],
-      polygons: buildPolygonPool([ring]),
-    };
+    const lotLayer = lotLayerOf([rawLot(0, 0)], buildPolygonPool([ring]));
     const result = buildingsStage(
       {
         context: buildContext(),

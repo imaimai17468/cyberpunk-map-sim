@@ -88,10 +88,17 @@ export interface BlockLayer {
   readonly roads: RoadGraph;
 }
 
-/** Stage 9 output. */
+/** Stage 9 output. Alley segments are appended to the street graph. */
 export interface LotLayer {
   readonly lots: readonly Lot[];
   readonly polygons: PolygonPool;
+  /**
+   * The whole network, not this stage's own contribution to it: the alleys plus
+   * everything `BlockLayer.roads` carried. Downstream stages take the road graph
+   * from the last stage that changed it, so there is never a moment where
+   * grading or massing has to know the network arrives in pieces.
+   */
+  readonly roads: RoadGraph;
 }
 
 /** Stage 10 output. Vetoed parcels become plazas, never holes. */

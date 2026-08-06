@@ -214,15 +214,35 @@ export const GRADING = {
  *
  * The figures are ordinary urban cross-sections: two 3.5 m lanes plus kerbs for
  * a street, four lanes plus a median for an avenue, four lanes plus shoulders
- * for a highway, and a single service lane for an alley. Half of each is taken
- * off the block on the edge that road bounds, so the gap between two blocks is
- * one full carriageway.
+ * for a highway. Half of each is taken off the block on the edge that road
+ * bounds, so the gap between two blocks is one full carriageway.
+ *
+ * The alley is the one that is not a carriageway at all, and it read 4 m — a
+ * service lane wide enough for a vehicle — for as long as the generator never
+ * produced one. What it produces now is the lane threaded between slum shacks
+ * and the pole of a suburban flag lot, and 4 m is the wrong order of magnitude
+ * for both: a slum parcel is about 10.5 m on a side, so 4 m taken off two of
+ * them halves it.
+ *
+ * That was measured as a trial of 4 m against the state before alleys existed at
+ * all — neither figure below describes the 2 m this ships. On akiba-01 at the
+ * app's own 512 cells, the median slum parcel went 110.0 m² to 59.1 m² and the
+ * slum lots with no building on them went 991 of 3,560 to 1,773. At the golden
+ * 128 cells, where the density band is asserted, the map went 1,084 buildings
+ * per km² to 963 — under the 1,000 floor `pipeline.test.ts` holds.
+ *
+ * 2 m is what the thing being drawn actually measures. Tokyo's safety ordinance
+ * puts the minimum width of a 路地状敷地 at 2 m up to 20 m of length, and Edo
+ * backstreet tenements ran 3 to 6 shaku — 0.9 to 1.8 m. It is deliberately under
+ * the 4 m that Article 42 of the Building Standards Act requires of a legal
+ * road: a slum warren does not satisfy the frontage rule, and that is what makes
+ * it a slum rather than a suburb.
  */
 export const ROAD_WIDTH_M: Readonly<Record<RoadClass, number>> = {
   highway: 30,
   avenue: 22,
   street: 11,
-  alley: 4,
+  alley: 2,
 };
 
 /**

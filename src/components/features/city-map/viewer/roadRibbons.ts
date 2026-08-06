@@ -58,15 +58,21 @@ type Face = readonly Vec2[];
  * How long a chord the rounded parts may be drawn with, in metres.
  *
  * Applies to the joint fans and the end caps, which are the only curved things
- * here. The sagitta of a chord `c` on radius `r` is about `c²/8r`, so 2 m on the
- * narrowest class — a 4 m alley, `r` = 2 — leaves 0.25 m of flat, and on a highway
- * 0.03 m.
+ * here. The sagitta of a chord `c` on radius `r` is about `c²/8r`, so this limit
+ * leaves 0.09 m of flat on a street and 0.03 m on a highway.
+ *
+ * Below `r` = √2 it stops binding at all, because a quarter sweep's own chord is
+ * already under 2 m: a 2 m alley's cap is two flat quarter turns, and their rims
+ * sit `r(1 - cos 45°)` = 0.29 m inside the circle. That is the largest such gap
+ * of the four classes, and still under a sixth of the road's own width.
  *
  * It costs almost nothing because it only ever applies to a rim. A cap is two
- * quarter sweeps, each a chord of `√2·r`, so it is `2·⌈√2·r / 2⌉` triangles an end:
- * 22 on a highway, 16 on an avenue, 8 on a street, 4 on an alley. As a formula
- * rather than four numbers, because four numbers rot one road width at a time —
- * the highway figure here read 24 until a reviewer counted the triangles.
+ * quarter sweeps, each a chord of `√2·r`, so it is `2·max(1, ⌈√2·r / 2⌉)`
+ * triangles an end: 22 on a highway, 16 on an avenue, 8 on a street, 2 on an
+ * alley. As a formula rather than four numbers, because four numbers rot one
+ * road width at a time — the highway figure here read 24 until a reviewer
+ * counted the triangles, and the alley figure read 4 until the class stopped
+ * being 4 m wide.
  */
 const RIM_CHORD_M = 2;
 

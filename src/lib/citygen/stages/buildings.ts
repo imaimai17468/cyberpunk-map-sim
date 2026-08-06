@@ -276,8 +276,8 @@ const FIT_STEPS = 10;
  * The largest concentric shrink of `obb` that fits inside `ring`.
  *
  * A lot's box is a *bounding* box, so on any lot that is not a rectangle it
- * sticks out past the plot — and since lots tile their block, what it sticks
- * out into is the neighbour. Thousands of pairs of buildings on different lots
+ * sticks out past the plot — and what it sticks out into is the neighbour or
+ * the alley between them. Thousands of pairs of buildings on different lots
  * interpenetrated before this, corporate towers among them. Keeping each
  * footprint inside its own lot is what makes that impossible rather than
  * unlikely, because the lots themselves do not overlap.
@@ -773,9 +773,10 @@ export const buildingsStage = (
   // archetype's massing. The massing rules are about proportion — coverage,
   // setback, tiering — and each would otherwise have to re-derive containment
   // for itself; doing it once at the boundary means no archetype can forget.
-  // Lots tile their block without overlapping, so this is also what makes two
-  // buildings on different lots unable to intersect. Two on the *same* lot
-  // still can, which is how a slum shack keeps its lean-to.
+  // Lots never overlap — they partition their block, less whatever the alleys
+  // between them take — so this is also what makes two buildings on different
+  // lots unable to intersect. Two on the *same* lot still can, which is how a
+  // slum shack keeps its lean-to.
   const lotRingOf = (lotId: number): readonly Vec2[] =>
     ringFromPool(lotLayer.polygons, lotLayer.lots[lotId].ringIndex);
 

@@ -58,6 +58,8 @@ const lotLayerOf = (polygons: PolygonPool, count: number): LotLayer => ({
     frontageDir: null,
   })),
   polygons,
+  // Unread here: this stage takes the road graph as its own declared input.
+  roads: EMPTY_ROADS,
 });
 
 describe("gradingStage", () => {

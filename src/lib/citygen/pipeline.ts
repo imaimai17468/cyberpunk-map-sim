@@ -172,7 +172,7 @@ export const generateCity = (
   const grading = gradingStage({
     grid,
     elevation: terrain.elevation,
-    roads: blockLayer.roads,
+    roads: lotLayer.roads,
     lotLayer,
     districtOf: new Map(zonedBlocks.map((b) => [b.id, b.district])),
   });
@@ -183,7 +183,7 @@ export const generateCity = (
       context,
       blocks: zonedBlocks,
       lotLayer,
-      roads: blockLayer.roads,
+      roads: lotLayer.roads,
       grading,
     },
     streamFor("buildings")
@@ -237,9 +237,15 @@ export const generateCity = (
     // change and be localised to the wrong stage. The presence flag is separate
     // from the components because a null direction and a genuine (0, 0) must
     // not hash alike.
+    //
+    // The road graph is this stage's output as well, for the reason `blocks`
+    // gives above: the alleys could stop being emitted entirely and, without
+    // this, every golden would still pass.
     lots: byteWriter()
       .u32(lotLayer.lots.length)
       .f32Array(lotLayer.polygons.coords)
+      .u32(lotLayer.roads.edges.length)
+      .f32Array(lotLayer.roads.polylines.coords)
       .u8Array(
         Uint8Array.from(
           lotLayer.lots.map((lot) => (lot.frontageDir === null ? 0 : 1))
@@ -286,7 +292,7 @@ export const generateCity = (
     terrain,
     fields,
     anchors: anchorSet.anchors,
-    roads: blockLayer.roads,
+    roads: lotLayer.roads,
     blocks: zonedBlocks,
     blockPolygons: blockLayer.polygons,
     lots: lotLayer.lots,

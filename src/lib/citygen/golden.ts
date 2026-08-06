@@ -46,6 +46,17 @@ export interface GoldenEntry {
 }
 
 /**
+ * Regenerated 2026-08-06 for the alleys, all three seeds. `lots`, `grading` and
+ * `buildings` moved on every one and nothing above them moved on any: the alley
+ * segments are appended to the road graph the block subdivision already built, so
+ * `blocks` still hashes the network it emitted and only the stages downstream of
+ * `lots` see the longer one. `lots` moves for three reasons at once — the alleys in
+ * its road output, the `frontageDir` the alley-fronting lots now carry, and the
+ * rings those lots gave up half a carriageway from.
+ *
+ * The note that follows is the previous regeneration, and its account of what this
+ * configuration can and cannot witness still stands.
+ *
  * Regenerated 2026-08-05 a third time, for the per-district earthwork budget. Only
  * `grading` and `buildings` move again, for the same reason as the second: the
  * budget decides which lots get a pad, and nothing upstream of `buildings` reads one.
@@ -98,7 +109,7 @@ export interface GoldenEntry {
  */
 export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
   "akiba-01": {
-    contentHash: "1f1c79f8d3d70deb",
+    contentHash: "1d51f1125cf7b382",
     stageHashes: {
       terrain: "7e22e397873605da",
       hydrology: "fcfa14d079f26450",
@@ -108,13 +119,13 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       arterials: "6d92612038e46740",
       blocks: "5e5947b40947c784",
       zoning: "d84bcb7ed308020d",
-      lots: "0b05536beea52762",
-      grading: "757245e637243b62",
-      buildings: "5fd1d7d7cfa63fde",
+      lots: "b97a1fdaf23cb9e2",
+      grading: "227f5b6e65b589c7",
+      buildings: "ac1ad884cda28e6e",
     },
   },
   "akiba-02": {
-    contentHash: "99a72bbc6f853f0b",
+    contentHash: "aafa1b0b49387f57",
     stageHashes: {
       terrain: "7d83a8eb1f9050c4",
       hydrology: "b201772eac6cf3ee",
@@ -124,13 +135,13 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       arterials: "8ba7a4578282454f",
       blocks: "37aeef94a4894276",
       zoning: "bd368aad40fa0a0d",
-      lots: "4c8529337cf1f893",
-      grading: "eaf62a6846358f71",
-      buildings: "15b7508b9605d764",
+      lots: "2fcc8b8f534566d2",
+      grading: "2bbfb0a1d169414b",
+      buildings: "003706d1c2bbdabd",
     },
   },
   "akiba-03": {
-    contentHash: "bec859623c066658",
+    contentHash: "6871666a2d7b0af0",
     stageHashes: {
       terrain: "1e715e3193652004",
       hydrology: "7eca9d76c27f920a",
@@ -140,9 +151,9 @@ export const GOLDEN_CITIES: Readonly<Record<string, GoldenEntry>> = {
       arterials: "e6c0b3ecd7586ce7",
       blocks: "8a5300bc8fdc5163",
       zoning: "307796c8ba0d53ee",
-      lots: "7a60fe0e97f75341",
-      grading: "918f3f9165fc83cb",
-      buildings: "75c805bddaf9b6b9",
+      lots: "221a78046aa7df86",
+      grading: "9de81b612de2d9bf",
+      buildings: "4ad586fe35b70764",
     },
   },
 };
